@@ -303,7 +303,7 @@
   const DIFF = {
     easy:   { label: 'EASY',   speedBase: 92,  speedRamp: 1.6, speedCap: 240, cadenceBase: 1.45, cadenceFloor: 0.42, cadenceRamp: 0.008, dualAt: 65, dualChance: 0.18, initialDelay: 1.8 },
     normal: { label: 'NORMAL', speedBase: 108, speedRamp: 2.3, speedCap: 300, cadenceBase: 1.25, cadenceFloor: 0.34, cadenceRamp: 0.011, dualAt: 48, dualChance: 0.28, initialDelay: 1.5 },
-    hard:   { label: 'HARD',   speedBase: 130, speedRamp: 3.1, speedCap: 350, cadenceBase: 1.05, cadenceFloor: 0.24, cadenceRamp: 0.015, dualAt: 28, dualChance: 0.42, initialDelay: 1.15 },
+    hard:   { label: 'HARD',   speedBase: 122, speedRamp: 2.7, speedCap: 330, cadenceBase: 0.82, cadenceFloor: 0.15, cadenceRamp: 0.018, dualAt: 14, dualChance: 0.5, initialDelay: 0.9 },
   };
   let difficulty = 'normal';
   try {
@@ -472,7 +472,14 @@
       if (playing) {
         const d0 = DIFF[difficulty];
         spawnDebris(false);
-        if (elapsed > d0.dualAt && Math.random() < d0.dualChance) spawnDebris(false);
+        // each extra roll can chain into the next, so a high dualChance (HARD)
+        // occasionally produces a real swarm rather than ever just one extra;
+        // capped so it stays a burst, not an unplayable, unbounded pile-up
+        let extra = 0;
+        while (elapsed > d0.dualAt && extra < 3 && debris.length < 40 && Math.random() < d0.dualChance) {
+          spawnDebris(false);
+          extra++;
+        }
         nextDebris = Math.max(d0.cadenceFloor, d0.cadenceBase - elapsed * d0.cadenceRamp);
       } else {
         spawnDebris(true);
