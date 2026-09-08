@@ -326,6 +326,9 @@
   window.addEventListener('pointerdown', press);
   window.addEventListener('keydown', (e) => {
     if (e.code === 'Space' || e.code === 'ArrowLeft' || e.code === 'ArrowRight' || e.code === 'Enter') {
+      // a focused button owns the key; don't steal it to flip the ship
+      const focused = document.activeElement;
+      if (focused && focused.closest && focused.closest('button')) return;
       e.preventDefault(); press(null);
     }
     if (e.code === 'KeyM') el.mute.click();
