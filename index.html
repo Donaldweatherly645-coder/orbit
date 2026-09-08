@@ -89,6 +89,19 @@
     font-family:var(--mono); font-size:10px; letter-spacing:.16em;
     color:var(--ice); border:1px solid var(--line); padding:6px 10px;
   }
+  .diffLabel{
+    font-family:var(--mono); font-size:9px; letter-spacing:.24em;
+    color:var(--slate); margin:22px 0 8px;
+  }
+  .diffs{display:flex; justify-content:center; gap:10px; flex-wrap:wrap}
+  .diff{
+    font-family:var(--mono); font-size:11px; letter-spacing:.14em;
+    color:var(--slate-lit); background:transparent; border:1px solid var(--line);
+    padding:11px 16px; min-height:44px; cursor:pointer; transition:color .15s,border-color .15s;
+  }
+  .diff:hover{color:var(--ice); border-color:var(--slate)}
+  .diff:focus-visible{outline:2px solid var(--sodium); outline-offset:2px}
+  .diff[aria-pressed="true"]{color:var(--sodium); border-color:var(--sodium)}
   .prompt{
     font-family:var(--mono); font-size:11px; letter-spacing:.26em;
     color:var(--sodium); margin:26px 0 0;
@@ -115,7 +128,7 @@
   #title{align-self:end; margin-bottom:6vh}
   #title h1{animation:rise .7s cubic-bezier(.2,.7,.3,1) both}
   #title .eyebrow{animation:rise .7s .06s cubic-bezier(.2,.7,.3,1) both}
-  #title .blurb,#title .keys{animation:rise .7s .12s cubic-bezier(.2,.7,.3,1) both}
+  #title .blurb,#title .diffLabel,#title .diffs,#title .keys{animation:rise .7s .12s cubic-bezier(.2,.7,.3,1) both}
   @keyframes rise{from{opacity:0; transform:translateY(10px)} to{opacity:1; transform:none}}
   .blink{animation:blink 1.5s steps(2,end) infinite}
   @keyframes blink{50%{opacity:.25}}
@@ -145,6 +158,12 @@
       <h1>ORBIT</h1>
       <div class="rule"></div>
       <p class="blurb">Debris is falling toward the planet. You can only do one thing about it: reverse your orbit. Grab the sparks to chain a multiplier.</p>
+      <p class="diffLabel">DIFFICULTY</p>
+      <div class="diffs" role="group" aria-label="Difficulty" data-diffs>
+        <button class="diff" type="button" data-diff="easy">EASY</button>
+        <button class="diff" type="button" data-diff="normal">NORMAL</button>
+        <button class="diff" type="button" data-diff="hard">HARD</button>
+      </div>
       <div class="keys">
         <span class="key">CLICK</span><span class="key">SPACE</span><span class="key">TAP</span>
       </div>
@@ -159,6 +178,13 @@
         <div class="stat"><span class="k">SPARKS</span><span class="v" id="stSparks">0</span></div>
         <div class="stat"><span class="k">NEAR MISSES</span><span class="v" id="stNear">0</span></div>
         <div class="stat best"><span class="k">BEST</span><span class="v" id="stBest">0</span></div>
+        <div class="stat"><span class="k">MODE</span><span class="v" id="stMode">NORMAL</span></div>
+      </div>
+      <p class="diffLabel">DIFFICULTY</p>
+      <div class="diffs" role="group" aria-label="Difficulty" data-diffs>
+        <button class="diff" type="button" data-diff="easy">EASY</button>
+        <button class="diff" type="button" data-diff="normal">NORMAL</button>
+        <button class="diff" type="button" data-diff="hard">HARD</button>
       </div>
       <p class="prompt blink" id="againPrompt">PRESS TO RELAUNCH</p>
     </div>
@@ -185,6 +211,7 @@
     stSparks: document.getElementById('stSparks'),
     stNear: document.getElementById('stNear'),
     stBest: document.getElementById('stBest'),
+    stMode: document.getElementById('stMode'),
   };
 
   /* ---------- geometry ---------- */
@@ -260,6 +287,32 @@
     el.mute.setAttribute('aria-pressed', String(muted));
   });
 
+  /* ---------- difficulty ---------- */
+  // "normal" matches the game's original, un-tuned numbers exactly.
+  const DIFF = {
+    easy:   { label: 'EASY',   speedBase: 92,  speedRamp: 1.6, speedCap: 240, cadenceBase: 1.45, cadenceFloor: 0.42, cadenceRamp: 0.008, dualAt: 65, dualChance: 0.18, initialDelay: 1.8 },
+    normal: { label: 'NORMAL', speedBase: 108, speedRamp: 2.3, speedCap: 300, cadenceBase: 1.25, cadenceFloor: 0.34, cadenceRamp: 0.011, dualAt: 48, dualChance: 0.28, initialDelay: 1.5 },
+    hard:   { label: 'HARD',   speedBase: 130, speedRamp: 3.1, speedCap: 350, cadenceBase: 1.05, cadenceFloor: 0.24, cadenceRamp: 0.015, dualAt: 28, dualChance: 0.42, initialDelay: 1.15 },
+  };
+  let difficulty = 'normal';
+  try {
+    const saved = localStorage.getItem('orbit.difficulty');
+    if (saved && DIFF[saved]) difficulty = saved;
+  } catch (e) {}
+
+  const diffButtons = document.querySelectorAll('[data-diff]');
+  function setDifficulty(id) {
+    if (!DIFF[id]) return;
+    difficulty = id;
+    try { localStorage.setItem('orbit.difficulty', id); } catch (e) {}
+    diffButtons.forEach((b) => {
+      const on = b.dataset.diff === id;
+      b.setAttribute('aria-pressed', String(on));
+    });
+  }
+  diffButtons.forEach((b) => b.addEventListener('click', () => setDifficulty(b.dataset.diff)));
+  setDifficulty(difficulty);
+
   /* ---------- state ---------- */
   let state = 'menu';        // menu | play | over
   let best = 0;
@@ -277,7 +330,7 @@
     player.a = -Math.PI / 2; player.dir = 1; player.trail.length = 0;
     debris = []; sparks = []; parts = []; floats = [];
     score = 0; combo = 1; elapsed = 0; sparkCount = 0; nearCount = 0;
-    nextDebris = menu ? 1.2 : 1.5; nextSpark = 2.2;
+    nextDebris = menu ? 1.2 : DIFF[difficulty].initialDelay; nextSpark = 2.2;
     shake = 0; flash = 0;
   }
 
@@ -305,6 +358,7 @@
     el.stSparks.textContent = sparkCount;
     el.stNear.textContent = nearCount;
     el.stBest.textContent = best.toLocaleString();
+    el.stMode.textContent = DIFF[difficulty].label;
     el.over.classList.remove('hidden');
   }
 
@@ -337,7 +391,8 @@
   /* ---------- spawning ---------- */
   function spawnDebris(harmless) {
     const a = Math.random() * Math.PI * 2;
-    const speed = (harmless ? 70 : Math.min(300, 108 + elapsed * 2.3)) * u;
+    const d0 = DIFF[difficulty];
+    const speed = (harmless ? 70 : Math.min(d0.speedCap, d0.speedBase + elapsed * d0.speedRamp)) * u;
     const r = (8 + Math.random() * 7) * u;
     const verts = [];
     const n = 6 + Math.floor(Math.random() * 3);
@@ -388,9 +443,10 @@
     nextDebris -= dt;
     if (nextDebris <= 0) {
       if (playing) {
+        const d0 = DIFF[difficulty];
         spawnDebris(false);
-        if (elapsed > 48 && Math.random() < 0.28) spawnDebris(false);
-        nextDebris = Math.max(0.34, 1.25 - elapsed * 0.011);
+        if (elapsed > d0.dualAt && Math.random() < d0.dualChance) spawnDebris(false);
+        nextDebris = Math.max(d0.cadenceFloor, d0.cadenceBase - elapsed * d0.cadenceRamp);
       } else {
         spawnDebris(true);
         nextDebris = 1.4;
