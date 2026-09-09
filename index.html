@@ -213,6 +213,7 @@
         <div class="stat"><span class="k">NEAR MISSES</span><span class="v" id="stNear">0</span></div>
         <div class="stat best"><span class="k">BEST</span><span class="v" id="stBest">0</span></div>
         <div class="stat"><span class="k">MODE</span><span class="v" id="stMode">NORMAL</span></div>
+        <div class="stat"><span class="k">PLANET</span><span class="v" id="stPlanet">DORMANT</span></div>
       </div>
       <p class="diffLabel">DIFFICULTY</p>
       <div class="diffs" role="group" aria-label="Difficulty" data-diffs>
@@ -247,6 +248,7 @@
     stNear: document.getElementById('stNear'),
     stBest: document.getElementById('stBest'),
     stMode: document.getElementById('stMode'),
+    stPlanet: document.getElementById('stPlanet'),
     titleBest: document.getElementById('titleBest'),
     overlay: document.getElementById('overlay'),
     shieldBadge: document.getElementById('shieldBadge'),
@@ -336,6 +338,7 @@
     ufoFire:     () => tone(520, 170, 0.16, 'sawtooth', 0.07),
     shieldGet:   () => tone(500, 900, 0.16, 'triangle', 0.08),
     shieldBreak: () => { tone(700, 200, 0.18, 'square', 0.09); hiss(0.15, 0.06); },
+    stageUp:     () => tone(320, 900, 0.35, 'sine', 0.09),
   };
   el.mute.addEventListener('click', () => {
     muted = !muted;
@@ -363,6 +366,42 @@
   // average seconds between shield pickups -- more frequent on harder
   // tiers, since there's more to survive and more UFOs to eat a hit from
   const SHIELD_DIFF = { easy: 26, normal: 22, hard: 17, extreme: 13 };
+
+  // planet progression: the planet visibly transforms through 4 stages as
+  // score climbs. Same 4-stage ladder on every difficulty -- only the score
+  // needed to reach each one differs, scaled to how long a typical run on
+  // that tier actually lasts (EXTREME runs are short, so its thresholds are
+  // much lower -- otherwise nobody playing it would ever see the later stages)
+  const STAGE_THRESH = {
+    easy:    [0, 200, 500, 1000],
+    normal:  [0, 160, 400, 800],
+    hard:    [0, 110, 280, 560],
+    extreme: [0, 70,  180, 380],
+  };
+  const PLANET_STAGES = [
+    { label: 'DORMANT',   core: '#6E5C37', mid: '#3A3324', edge: '#141A2B', limb: 'rgba(168,203,230,.22)', seam: 'rgba(110,92,55,.5)',   glow: 0  },
+    { label: 'IGNITING',  core: '#C97A3C', mid: '#5A2E16', edge: '#160E0A', limb: 'rgba(255,154,60,.28)',  seam: 'rgba(201,122,60,.55)', glow: 6  },
+    { label: 'MOLTEN',    core: '#FFB25C', mid: '#B33A1E', edge: '#210A06', limb: 'rgba(255,120,60,.4)',   seam: 'rgba(255,178,92,.6)',  glow: 14 },
+    { label: 'ASCENDANT', core: '#F2E9FF', mid: '#8C5FD9', edge: '#1A0F2E', limb: 'rgba(200,150,255,.5)',  seam: 'rgba(230,200,255,.65)',glow: 22 },
+  ];
+  function stageFor(diff, s) {
+    const th = STAGE_THRESH[diff];
+    let idx = 0;
+    for (let i = 1; i < th.length; i++) if (s >= th[i]) idx = i;
+    return idx;
+  }
+
+  // ambient backdrop: EXTREME's psychedelic blobs, generalized so every
+  // difficulty gets a version of it, scaled to stay "appealing, not
+  // overwhelming" on the easier tiers. extreme's numbers here reproduce
+  // its original, already-shipped look exactly (all multipliers at 1).
+  const BG_DIFF = {
+    easy:    { blobs: 3, sat: 55, lightIn: 48, lightOut: 42, alpha: 0.24, hueSpeedMul: 0.4, radiusMul: 0.8,  driftMul: 0.55, vigIn: 0.5,  vigMid: 0.22 },
+    normal:  { blobs: 4, sat: 72, lightIn: 55, lightOut: 48, alpha: 0.34, hueSpeedMul: 0.6, radiusMul: 0.88, driftMul: 0.7,  vigIn: 0.55, vigMid: 0.24 },
+    hard:    { blobs: 5, sat: 88, lightIn: 60, lightOut: 52, alpha: 0.44, hueSpeedMul: 0.8, radiusMul: 0.95, driftMul: 0.85, vigIn: 0.58, vigMid: 0.25 },
+    extreme: { blobs: 6, sat: 95, lightIn: 62, lightOut: 55, alpha: 0.5,  hueSpeedMul: 1,   radiusMul: 1,    driftMul: 1,    vigIn: 0.6,  vigMid: 0.25 },
+  };
+
   let difficulty = 'normal';
   try {
     const saved = localStorage.getItem('orbit.difficulty');
@@ -393,6 +432,7 @@
   let sparkCount = 0, nearCount = 0;
   let shake = 0, flash = 0, readyAt = 0, deathAt = -99;
   let shieldPickup = null, shieldActive = false;
+  let planetStage = 0;
 
   const SPEED = 2.15;        // rad/s
 
@@ -404,6 +444,7 @@
     nextUFO = UFO_DIFF[difficulty].spawnEvery[0] * 0.6;
     nextShield = 5 + Math.random() * 5;
     shieldPickup = null; shieldActive = false;
+    planetStage = 0;
     shake = 0; flash = 0;
   }
 
@@ -433,6 +474,7 @@
     el.stNear.textContent = nearCount;
     el.stBest.textContent = best.toLocaleString();
     el.stMode.textContent = DIFF[difficulty].label;
+    el.stPlanet.textContent = PLANET_STAGES[planetStage].label;
     el.titleBest.textContent = best.toLocaleString();
     el.overlay.scrollTop = 0;
     el.over.classList.remove('hidden');
@@ -735,6 +777,20 @@
       if (f.life <= 0) floats.splice(i, 1);
     }
 
+    // planet progression: check for a stage-up on every frame score can
+    // change, so it can never trigger more than one stage late
+    if (playing) {
+      const newStage = stageFor(difficulty, score);
+      if (newStage > planetStage) {
+        planetStage = newStage;
+        const ps = PLANET_STAGES[planetStage];
+        burst(cx, cy, REDUCE ? 10 : 28, ps.core, 160 * u);
+        float(cx, cy - R_PLANET - 30 * u, ps.label, ps.core);
+        shake = Math.max(shake, REDUCE ? 0 : 6 * u);
+        sfx.stageUp();
+      }
+    }
+
     shake *= Math.pow(0.0025, dt);
     flash *= Math.pow(0.0008, dt);
 
@@ -747,33 +803,36 @@
   }
 
   /* ---------- draw ---------- */
-  // EXTREME's vivid, shifting backdrop. Drawn instead of the flat void
-  // fill. Debris/ship colors are untouched -- only the backdrop gets loud --
-  // and a dark vignette keeps the play area around the orbit legible, so
+  // Ambient backdrop, tiered by difficulty (BG_DIFF). Drawn instead of the
+  // flat void fill on every tier now, not just EXTREME. Debris/ship colors
+  // are untouched -- only the backdrop's intensity changes -- and a dark
+  // vignette keeps the play area around the orbit legible at every tier, so
   // the extra visual noise mostly bites at the screen edges, where debris
   // is still far out and there's time to react.
-  function drawPsy(t) {
+  function drawBackground(t) {
+    const cfg = BG_DIFF[difficulty];
     const tt = REDUCE ? 0 : t; // fully static (but still colorful) when reduced motion is on
     ctx.fillStyle = '#070A14';
     ctx.fillRect(0, 0, W, H);
 
     ctx.globalCompositeOperation = 'lighter';
-    for (const b of psyBlobs) {
-      const x = W / 2 + Math.sin(tt * b.freqX + b.phaseX) * W * b.ampXr;
-      const y = H / 2 + Math.cos(tt * b.freqY + b.phaseY) * H * b.ampYr;
-      const hue = (b.hueBase + tt * b.hueSpeed) % 360;
-      const r = Math.min(W, H) * b.radiusR;
+    for (let i = 0; i < cfg.blobs; i++) {
+      const b = psyBlobs[i];
+      const x = W / 2 + Math.sin(tt * b.freqX * cfg.driftMul + b.phaseX) * W * b.ampXr;
+      const y = H / 2 + Math.cos(tt * b.freqY * cfg.driftMul + b.phaseY) * H * b.ampYr;
+      const hue = (b.hueBase + tt * b.hueSpeed * cfg.hueSpeedMul) % 360;
+      const r = Math.min(W, H) * b.radiusR * cfg.radiusMul;
       const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-      g.addColorStop(0, 'hsla(' + hue.toFixed(1) + ',95%,62%,0.5)');
-      g.addColorStop(1, 'hsla(' + hue.toFixed(1) + ',95%,55%,0)');
+      g.addColorStop(0, 'hsla(' + hue.toFixed(1) + ',' + cfg.sat + '%,' + cfg.lightIn + '%,' + cfg.alpha + ')');
+      g.addColorStop(1, 'hsla(' + hue.toFixed(1) + ',' + cfg.sat + '%,' + cfg.lightOut + '%,0)');
       ctx.fillStyle = g;
       ctx.beginPath(); ctx.arc(x, y, r, 0, 6.2832); ctx.fill();
     }
     ctx.globalCompositeOperation = 'source-over';
 
     const vg = ctx.createRadialGradient(cx, cy, R_ORBIT * 0.25, cx, cy, R_ORBIT * 2.4);
-    vg.addColorStop(0, 'rgba(7,10,20,0.6)');
-    vg.addColorStop(0.7, 'rgba(7,10,20,0.25)');
+    vg.addColorStop(0, 'rgba(7,10,20,' + cfg.vigIn + ')');
+    vg.addColorStop(0.7, 'rgba(7,10,20,' + cfg.vigMid + ')');
     vg.addColorStop(1, 'rgba(7,10,20,0)');
     ctx.fillStyle = vg;
     ctx.fillRect(0, 0, W, H);
@@ -782,12 +841,7 @@
   function draw(now) {
     ctx.setTransform(Math.min(window.devicePixelRatio || 1, 2), 0, 0, Math.min(window.devicePixelRatio || 1, 2), 0, 0);
     const t = now / 1000;
-    if (difficulty === 'extreme') {
-      drawPsy(t);
-    } else {
-      ctx.fillStyle = '#070A14';
-      ctx.fillRect(0, 0, W, H);
-    }
+    drawBackground(t);
 
     if (shake > 0.4) {
       ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
@@ -830,21 +884,24 @@
       ctx.beginPath(); ctx.arc(cx, cy, R_ORBIT, a - w, a + w); ctx.stroke();
     }
 
-    // planet
+    // planet -- palette follows its current progression stage
+    const ps = PLANET_STAGES[planetStage];
+    if (ps.glow > 0) { ctx.shadowColor = ps.core; ctx.shadowBlur = ps.glow * u; }
     const g = ctx.createRadialGradient(
       cx - R_PLANET * 0.4, cy - R_PLANET * 0.45, R_PLANET * 0.1,
       cx, cy, R_PLANET);
-    g.addColorStop(0, '#6E5C37');
-    g.addColorStop(0.55, '#3A3324');
-    g.addColorStop(1, '#141A2B');
+    g.addColorStop(0, ps.core);
+    g.addColorStop(0.55, ps.mid);
+    g.addColorStop(1, ps.edge);
     ctx.fillStyle = g;
     ctx.beginPath(); ctx.arc(cx, cy, R_PLANET, 0, 6.2832); ctx.fill();
+    ctx.shadowBlur = 0;
     // atmospheric limb
     ctx.lineWidth = 2 * u;
-    ctx.strokeStyle = 'rgba(168,203,230,.22)';
+    ctx.strokeStyle = ps.limb;
     ctx.beginPath(); ctx.arc(cx, cy, R_PLANET + 2 * u, 0, 6.2832); ctx.stroke();
     ctx.lineWidth = 1;
-    ctx.strokeStyle = 'rgba(110,92,55,.5)';
+    ctx.strokeStyle = ps.seam;
     for (let i = 1; i <= 3; i++) {
       const yy = cy - R_PLANET + (R_PLANET * 2 * i) / 4;
       const hw = Math.sqrt(Math.max(0, R_PLANET * R_PLANET - (yy - cy) * (yy - cy)));
