@@ -44,6 +44,9 @@
   #combo{margin-left:auto; align-items:flex-end; opacity:0; transition:opacity .18s}
   #combo.on{opacity:1}
   #combo .v{color:var(--sodium)}
+  #shieldBadge{opacity:0; transition:opacity .18s}
+  #shieldBadge.on{opacity:1}
+  #shieldBadge .v{color:#6FE3FF}
   #mute{
     pointer-events:auto; margin-left:14px; align-self:center;
     background:transparent; border:1px solid var(--line); color:var(--slate);
@@ -163,6 +166,7 @@
   <div id="hud">
     <div class="read" id="score"><span class="k">SCORE</span><span class="v">0</span></div>
     <div class="read" id="best"><span class="k">BEST</span><span class="v">0</span></div>
+    <div class="read" id="shieldBadge"><span class="k">SHIELD</span><span class="v">●</span></div>
     <div class="read" id="combo"><span class="k">CHAIN</span><span class="v">x1</span></div>
     <button id="mute" type="button" aria-pressed="false">SOUND ON</button>
   </div>
@@ -172,7 +176,7 @@
       <p class="eyebrow">SINGLE-BUTTON ARCADE</p>
       <h1>ORBIT</h1>
       <div class="rule"></div>
-      <p class="blurb">Debris is falling toward the planet. You can only do one thing about it: reverse your orbit. Grab the sparks to chain a multiplier.</p>
+      <p class="blurb">Debris is falling toward the planet. You can only do one thing about it: reverse your orbit. Grab sparks to chain a multiplier and shields to survive a hit -- alien saucers will be shooting at you too.</p>
       <p class="bestLine">BEST <span id="titleBest">0</span></p>
       <p class="diffLabel">DIFFICULTY</p>
       <div class="diffs" role="group" aria-label="Difficulty" data-diffs>
@@ -232,6 +236,7 @@
     stMode: document.getElementById('stMode'),
     titleBest: document.getElementById('titleBest'),
     overlay: document.getElementById('overlay'),
+    shieldBadge: document.getElementById('shieldBadge'),
   };
 
   /* ---------- geometry ---------- */
@@ -315,6 +320,9 @@
     spark: () => { tone(680, 1080, 0.13, 'triangle', 0.09); },
     near:  () => tone(150, 110, 0.1, 'sine', 0.06),
     die:   () => { hiss(0.7, 0.22); tone(240, 40, 0.75, 'sawtooth', 0.14); },
+    ufoFire:     () => tone(520, 170, 0.16, 'sawtooth', 0.07),
+    shieldGet:   () => tone(500, 900, 0.16, 'triangle', 0.08),
+    shieldBreak: () => { tone(700, 200, 0.18, 'square', 0.09); hiss(0.15, 0.06); },
   };
   el.mute.addEventListener('click', () => {
     muted = !muted;
@@ -330,6 +338,18 @@
     hard:   { label: 'HARD',   speedBase: 122, speedRamp: 2.7, speedCap: 330, cadenceBase: 0.82, cadenceFloor: 0.15, cadenceRamp: 0.018, dualAt: 14, dualChance: 0.5, initialDelay: 0.9 },
     extreme:{ label: 'EXTREME',speedBase: 138, speedRamp: 3.2, speedCap: 380, cadenceBase: 0.55, cadenceFloor: 0.09, cadenceRamp: 0.024, dualAt: 5,  dualChance: 0.62, initialDelay: 0.6 },
   };
+  // UFOs: a turret-style hazard that hovers, charges up, then fires a
+  // straight shot at wherever the ship was the instant it finished
+  // charging. spawnEvery/fireEvery are [min,max] second ranges.
+  const UFO_DIFF = {
+    easy:    { spawnEvery: [22, 30], chargeTime: 0.75, shotSpeed: 165, fireEvery: [3.2, 4.2], lifespan: 9,  maxAlive: 1 },
+    normal:  { spawnEvery: [16, 24], chargeTime: 0.6,  shotSpeed: 195, fireEvery: [2.6, 3.6], lifespan: 11, maxAlive: 1 },
+    hard:    { spawnEvery: [10, 16], chargeTime: 0.48, shotSpeed: 230, fireEvery: [2.0, 2.8], lifespan: 13, maxAlive: 2 },
+    extreme: { spawnEvery: [6, 10],  chargeTime: 0.38, shotSpeed: 260, fireEvery: [1.5, 2.2], lifespan: 15, maxAlive: 3 },
+  };
+  // average seconds between shield pickups -- more frequent on harder
+  // tiers, since there's more to survive and more UFOs to eat a hit from
+  const SHIELD_DIFF = { easy: 26, normal: 22, hard: 17, extreme: 13 };
   let difficulty = 'normal';
   try {
     const saved = localStorage.getItem('orbit.difficulty');
@@ -355,18 +375,22 @@
   try { best = parseInt(localStorage.getItem('orbit.best') || '0', 10) || 0; } catch (e) {}
 
   const player = { a: -Math.PI / 2, dir: 1, trail: [] };
-  let debris = [], sparks = [], parts = [], floats = [];
-  let score = 0, combo = 1, elapsed = 0, nextDebris = 0, nextSpark = 0;
+  let debris = [], sparks = [], parts = [], floats = [], ufos = [], shots = [];
+  let score = 0, combo = 1, elapsed = 0, nextDebris = 0, nextSpark = 0, nextUFO = 0, nextShield = 0;
   let sparkCount = 0, nearCount = 0;
   let shake = 0, flash = 0, readyAt = 0, deathAt = -99;
+  let shieldPickup = null, shieldActive = false;
 
   const SPEED = 2.15;        // rad/s
 
   function reset(menu) {
     player.a = -Math.PI / 2; player.dir = 1; player.trail.length = 0;
-    debris = []; sparks = []; parts = []; floats = [];
+    debris = []; sparks = []; parts = []; floats = []; ufos = []; shots = [];
     score = 0; combo = 1; elapsed = 0; sparkCount = 0; nearCount = 0;
     nextDebris = menu ? 1.2 : DIFF[difficulty].initialDelay; nextSpark = 2.2;
+    nextUFO = UFO_DIFF[difficulty].spawnEvery[0] * 0.6;
+    nextShield = 5 + Math.random() * 5;
+    shieldPickup = null; shieldActive = false;
     shake = 0; flash = 0;
   }
 
@@ -459,6 +483,28 @@
   function spawnSpark() {
     sparks.push({ a: Math.random() * Math.PI * 2, life: 7, t: 0 });
   }
+  function spawnUFO() {
+    const uc = UFO_DIFF[difficulty];
+    const a = Math.random() * Math.PI * 2;
+    const hoverR = Math.min(W, H) * (0.30 + Math.random() * 0.14);
+    ufos.push({
+      a, hoverR, spin: (Math.random() < 0.5 ? -1 : 1) * (0.12 + Math.random() * 0.18),
+      x: cx + Math.cos(a) * hoverR, y: cy + Math.sin(a) * hoverR,
+      r: 11 * u, bob: Math.random() * 6.28, age: 0,
+      charging: false, chargeT: 0,
+      fireTimer: uc.fireEvery[0] * (0.5 + Math.random() * 0.5),
+      lifespan: uc.lifespan,
+    });
+  }
+  // shield absorbs one lethal hit: the offending hazard is destroyed and
+  // the player survives, instead of dying
+  function shieldAbsorb(x, y) {
+    shieldActive = false;
+    shake = Math.max(shake, REDUCE ? 0 : 10 * u);
+    burst(x, y, REDUCE ? 10 : 26, '#6FE3FF', 200 * u);
+    float(px(), py() - 22 * u, 'SHIELD', '#6FE3FF');
+    sfx.shieldBreak();
+  }
 
   function burst(x, y, n, color, spd) {
     if (REDUCE) n = Math.ceil(n / 3);
@@ -529,12 +575,115 @@
       }
       if (playing) {
         const gap = Math.hypot(d.x - ppx, d.y - ppy);
-        if (gap < d.r + SHIP) { die(); return; }
+        if (gap < d.r + SHIP) {
+          if (shieldActive) {
+            shieldAbsorb(d.x, d.y);
+            debris.splice(i, 1);
+            continue;
+          }
+          die(); return;
+        }
         if (!d.near && gap < d.r + SHIP + 26 * u) {
           d.near = true; nearCount++; score += 5;
           shake = Math.max(shake, REDUCE ? 0 : 4 * u);
           float(ppx, ppy - 22 * u, '+5', '#A8CBE6');
           sfx.near();
+        }
+      }
+    }
+
+    // UFOs: spawn on a timer, hover/drift, charge up, then fire a shot
+    // aimed at wherever the ship currently is
+    if (playing) {
+      const uc = UFO_DIFF[difficulty];
+      nextUFO -= dt;
+      if (nextUFO <= 0 && ufos.length < uc.maxAlive) {
+        spawnUFO();
+        nextUFO = uc.spawnEvery[0] + Math.random() * (uc.spawnEvery[1] - uc.spawnEvery[0]);
+      }
+    }
+    for (let i = ufos.length - 1; i >= 0; i--) {
+      const uu = ufos[i];
+      uu.age += dt;
+      uu.a += uu.spin * dt;
+      uu.x = cx + Math.cos(uu.a) * uu.hoverR;
+      uu.y = cy + Math.sin(uu.a) * uu.hoverR;
+      uu.bob += dt * 3;
+
+      if (uu.age > uu.lifespan) {
+        burst(uu.x, uu.y, REDUCE ? 8 : 18, '#7CFFC2', 140 * u);
+        ufos.splice(i, 1);
+        continue;
+      }
+
+      if (playing) {
+        const uc = UFO_DIFF[difficulty];
+        if (uu.charging) {
+          uu.chargeT += dt;
+          if (uu.chargeT >= uc.chargeTime) {
+            const ang = Math.atan2(ppy - uu.y, ppx - uu.x);
+            shots.push({
+              x: uu.x, y: uu.y,
+              vx: Math.cos(ang) * uc.shotSpeed * u,
+              vy: Math.sin(ang) * uc.shotSpeed * u,
+            });
+            sfx.ufoFire();
+            uu.charging = false;
+            uu.fireTimer = uc.fireEvery[0] + Math.random() * (uc.fireEvery[1] - uc.fireEvery[0]);
+          }
+        } else {
+          uu.fireTimer -= dt;
+          if (uu.fireTimer <= 0) { uu.charging = true; uu.chargeT = 0; }
+        }
+
+        const gapU = Math.hypot(uu.x - ppx, uu.y - ppy);
+        if (gapU < uu.r + SHIP) {
+          if (shieldActive) {
+            shieldAbsorb(uu.x, uu.y);
+            ufos.splice(i, 1);
+            continue;
+          }
+          die(); return;
+        }
+      }
+    }
+
+    // UFO shots
+    for (let i = shots.length - 1; i >= 0; i--) {
+      const s = shots[i];
+      s.x += s.vx * dt; s.y += s.vy * dt;
+      if (Math.hypot(s.x - cx, s.y - cy) > spawnR) { shots.splice(i, 1); continue; }
+      if (playing) {
+        const gap = Math.hypot(s.x - ppx, s.y - ppy);
+        if (gap < SHIP + 4 * u) {
+          if (shieldActive) {
+            shieldAbsorb(s.x, s.y);
+            shots.splice(i, 1);
+            continue;
+          }
+          die(); return;
+        }
+      }
+    }
+
+    // shield pickup: spawns on a timer, collected like a spark
+    if (playing) {
+      nextShield -= dt;
+      if (nextShield <= 0 && !shieldPickup && !shieldActive) {
+        shieldPickup = { a: Math.random() * Math.PI * 2, life: 8 };
+        nextShield = SHIELD_DIFF[difficulty] * (0.7 + Math.random() * 0.6);
+      }
+      if (shieldPickup) {
+        shieldPickup.life -= dt;
+        const sx = cx + Math.cos(shieldPickup.a) * R_ORBIT, sy = cy + Math.sin(shieldPickup.a) * R_ORBIT;
+        if (Math.hypot(sx - ppx, sy - ppy) < SHIP + 15 * u) {
+          shieldActive = true;
+          float(sx, sy - 20 * u, 'SHIELD', '#6FE3FF');
+          burst(sx, sy, 14, '#6FE3FF', 140 * u);
+          sfx.shieldGet();
+          shieldPickup = null;
+        } else if (shieldPickup.life <= 0) {
+          shieldPickup = null;
         }
       }
     }
@@ -581,6 +730,7 @@
     el.best.textContent = Math.max(best, Math.floor(score)).toLocaleString();
     el.comboV.textContent = 'x' + combo;
     el.combo.classList.toggle('on', playing && combo > 1);
+    el.shieldBadge.classList.toggle('on', playing && shieldActive);
   }
 
   /* ---------- draw ---------- */
@@ -704,6 +854,24 @@
       ctx.beginPath(); ctx.arc(sx, sy, (9 + pulse * 3) * u, 0, 6.2832); ctx.stroke();
     }
 
+    // shield pickup
+    if (shieldPickup) {
+      const sx = cx + Math.cos(shieldPickup.a) * R_ORBIT, sy = cy + Math.sin(shieldPickup.a) * R_ORBIT;
+      const pulse = 0.6 + 0.4 * Math.sin(t * 6);
+      ctx.save();
+      ctx.shadowColor = '#6FE3FF'; ctx.shadowBlur = 14 * u * pulse;
+      ctx.strokeStyle = '#6FE3FF'; ctx.lineWidth = 2 * u;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * 6.2832 - Math.PI / 2;
+        const rr = (6 + pulse * 1.4) * u;
+        const x = sx + Math.cos(a) * rr, y = sy + Math.sin(a) * rr;
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      }
+      ctx.closePath(); ctx.stroke();
+      ctx.restore();
+    }
+
     // debris
     for (const d of debris) {
       const len = Math.hypot(d.vx, d.vy);
@@ -729,6 +897,66 @@
       ctx.restore();
     }
 
+    // UFOs
+    for (const uu of ufos) {
+      const bobY = Math.sin(uu.bob) * 2 * u;
+      ctx.save();
+      ctx.translate(uu.x, uu.y + bobY);
+      const rx = 15 * u, ry = 5.5 * u;
+      const glowColor = uu.charging ? '#FFE2B0' : '#7CFFC2';
+      ctx.beginPath();
+      ctx.ellipse(0, 0, rx, ry, 0, 0, 6.2832);
+      ctx.fillStyle = '#243B32';
+      ctx.fill();
+      ctx.strokeStyle = glowColor;
+      ctx.lineWidth = 1.4 * u;
+      ctx.stroke();
+
+      const domeGrad = ctx.createRadialGradient(-rx * 0.15, -ry * 1.6, 1, 0, -ry * 0.8, rx * 0.6);
+      domeGrad.addColorStop(0, '#E4FFF1');
+      domeGrad.addColorStop(1, '#4FCB94');
+      ctx.beginPath();
+      ctx.ellipse(0, -ry * 0.75, rx * 0.5, ry * 1.1, 0, Math.PI, 0);
+      ctx.fillStyle = domeGrad;
+      ctx.fill();
+
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * 6.2832 + uu.bob * 0.4;
+        const lx = Math.cos(a) * rx * 0.8, ly = Math.sin(a) * ry * 0.8;
+        const glow = 0.5 + 0.5 * Math.sin(uu.bob * 3 + i);
+        ctx.globalAlpha = glow;
+        ctx.fillStyle = glowColor;
+        ctx.beginPath(); ctx.arc(lx, ly, 1.6 * u, 0, 6.2832); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      if (uu.charging) {
+        const k = Math.min(1, uu.chargeT / (UFO_DIFF[difficulty].chargeTime || 0.5));
+        ctx.shadowColor = '#FFE2B0'; ctx.shadowBlur = 18 * u * k;
+        ctx.beginPath(); ctx.arc(0, ry * 0.5, 2.4 * u * (0.4 + k * 0.6), 0, 6.2832);
+        ctx.fillStyle = '#FFE2B0';
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+      ctx.restore();
+    }
+
+    // UFO shots
+    for (const s of shots) {
+      const len = Math.hypot(s.vx, s.vy) || 1;
+      const ux = s.vx / len, uy = s.vy / len;
+      ctx.save();
+      ctx.shadowColor = '#FF4D5E'; ctx.shadowBlur = 10 * u;
+      ctx.strokeStyle = '#FF4D5E';
+      ctx.lineWidth = 2.4 * u;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(s.x - ux * 7 * u, s.y - uy * 7 * u);
+      ctx.lineTo(s.x + ux * 3 * u, s.y + uy * 3 * u);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     // player trail
     if (player.trail.length > 1) {
       for (let i = 1; i < player.trail.length; i++) {
@@ -746,6 +974,11 @@
       const ppx = px(), ppy = py();
       ctx.save();
       ctx.translate(ppx, ppy);
+      if (shieldActive) {
+        ctx.strokeStyle = 'rgba(111,227,255,' + (0.55 + 0.25 * Math.sin(t * 5)).toFixed(2) + ')';
+        ctx.lineWidth = 1.6 * u;
+        ctx.beginPath(); ctx.arc(0, 0, SHIP * 2.2, 0, 6.2832); ctx.stroke();
+      }
       ctx.rotate(player.a + player.dir * Math.PI / 2);
       ctx.shadowColor = '#FF9A3C'; ctx.shadowBlur = 16 * u;
       ctx.fillStyle = '#FF9A3C';
