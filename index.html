@@ -367,23 +367,55 @@
   // tiers, since there's more to survive and more UFOs to eat a hit from
   const SHIELD_DIFF = { easy: 26, normal: 22, hard: 17, extreme: 13 };
 
-  // planet progression: the planet visibly transforms through 4 stages as
-  // score climbs. Same 4-stage ladder on every difficulty -- only the score
-  // needed to reach each one differs, scaled to how long a typical run on
-  // that tier actually lasts (EXTREME runs are short, so its thresholds are
-  // much lower -- otherwise nobody playing it would ever see the later stages)
-  const STAGE_THRESH = {
-    easy:    [0, 200, 500, 1000],
-    normal:  [0, 160, 400, 800],
-    hard:    [0, 110, 280, 560],
-    extreme: [0, 70,  180, 380],
-  };
+  // planet progression: the planet visibly transforms through 20 stages as
+  // score climbs -- geological, then crystalline/bioluminescent, then
+  // cosmic, then stellar/mythic. Rings, moons, and a pulsing corona unlock
+  // progressively alongside the palette, so later stages don't just look
+  // different, they look genuinely more elaborate. Same 20-stage ladder on
+  // every difficulty -- only the score needed to reach each one differs,
+  // scaled to how long a typical run on that tier actually lasts (EXTREME
+  // runs are short, so its thresholds are much lower -- otherwise nobody
+  // playing it would ever see the later stages). The curve front-loads
+  // early stages (fast, satisfying first few transitions) and stretches
+  // out the later ones (the top stages are a real achievement).
   const PLANET_STAGES = [
-    { label: 'DORMANT',   core: '#6E5C37', mid: '#3A3324', edge: '#141A2B', limb: 'rgba(168,203,230,.22)', seam: 'rgba(110,92,55,.5)',   glow: 0  },
-    { label: 'IGNITING',  core: '#C97A3C', mid: '#5A2E16', edge: '#160E0A', limb: 'rgba(255,154,60,.28)',  seam: 'rgba(201,122,60,.55)', glow: 6  },
-    { label: 'MOLTEN',    core: '#FFB25C', mid: '#B33A1E', edge: '#210A06', limb: 'rgba(255,120,60,.4)',   seam: 'rgba(255,178,92,.6)',  glow: 14 },
-    { label: 'ASCENDANT', core: '#F2E9FF', mid: '#8C5FD9', edge: '#1A0F2E', limb: 'rgba(200,150,255,.5)',  seam: 'rgba(230,200,255,.65)',glow: 22 },
+    { label: 'DORMANT',       core: '#6E5C37', mid: '#3A3324', edge: '#141A2B', limb: 'rgba(168,203,230,.22)', seam: 'rgba(110,92,55,.5)',  glow: 0,  rings: 0, moons: 0, corona: 0 },
+    { label: 'STIRRING',      core: '#7A6E5A', mid: '#443F33', edge: '#141522', limb: 'rgba(168,203,230,.26)', seam: 'rgba(130,120,95,.5)', glow: 2,  rings: 0, moons: 0, corona: 0 },
+    { label: 'WARMING',       core: '#A56B3C', mid: '#4E2C17', edge: '#160F0A', limb: 'rgba(255,170,90,.26)',  seam: 'rgba(165,107,60,.52)',glow: 4,  rings: 0, moons: 0, corona: 0 },
+    { label: 'IGNITING',      core: '#C97A3C', mid: '#5A2E16', edge: '#160E0A', limb: 'rgba(255,154,60,.28)',  seam: 'rgba(201,122,60,.55)',glow: 7,  rings: 0, moons: 0, corona: 0 },
+    { label: 'SMOLDERING',    core: '#E06A34', mid: '#7A2410', edge: '#180805', limb: 'rgba(255,110,60,.32)',  seam: 'rgba(224,106,52,.58)',glow: 9,  rings: 0, moons: 0, corona: 0 },
+    { label: 'MOLTEN',        core: '#FFB25C', mid: '#B33A1E', edge: '#210A06', limb: 'rgba(255,120,60,.4)',   seam: 'rgba(255,178,92,.6)', glow: 12, rings: 0, moons: 0, corona: 0 },
+    { label: 'CRACKING',      core: '#FF9E6B', mid: '#9C3A5C', edge: '#1C0A18', limb: 'rgba(255,140,120,.42)', seam: 'rgba(120,220,220,.4)',glow: 14, rings: 1, moons: 0, corona: 0 },
+    { label: 'CRYSTALLIZING', core: '#7EE8D8', mid: '#2C7A82', edge: '#0A1E24', limb: 'rgba(126,232,216,.42)', seam: 'rgba(180,255,240,.5)',glow: 15, rings: 1, moons: 0, corona: 0 },
+    { label: 'LUMINOUS',      core: '#8CFFB0', mid: '#1F9E6E', edge: '#062018', limb: 'rgba(140,255,176,.45)', seam: 'rgba(200,255,220,.55)',glow:16, rings: 1, moons: 1, corona: 0 },
+    { label: 'ELECTRIC',      core: '#9EC6FF', mid: '#3A4FCF', edge: '#0A0E2A', limb: 'rgba(158,198,255,.48)', seam: 'rgba(220,230,255,.55)',glow:17, rings: 1, moons: 2, corona: 0 },
+    { label: 'NEBULOUS',      core: '#D89CFF', mid: '#6E2FA8', edge: '#180A28', limb: 'rgba(216,156,255,.5)',  seam: 'rgba(240,210,255,.55)',glow:18, rings: 2, moons: 2, corona: 0 },
+    { label: 'AURORIC',       core: '#B8FFD9', mid: '#3FA87A', edge: '#0C2418', limb: 'rgba(184,255,217,.5)',  seam: 'rgba(190,140,255,.5)',glow: 19, rings: 2, moons: 2, corona: 1 },
+    { label: 'PRISMATIC',     core: '#FFC2E8', mid: '#8C5FD9', edge: '#180F2E', limb: 'rgba(255,194,232,.5)',  seam: 'rgba(160,200,255,.55)',glow:20, rings: 2, moons: 3, corona: 1 },
+    { label: 'RADIANT',       core: '#FFEFB0', mid: '#E0A93C', edge: '#241708', limb: 'rgba(255,239,176,.55)', seam: 'rgba(255,220,140,.6)',glow: 22, rings: 2, moons: 3, corona: 2 },
+    { label: 'STELLAR',       core: '#FFFDE8', mid: '#FFC94C', edge: '#2A1C08', limb: 'rgba(255,253,232,.58)', seam: 'rgba(255,220,140,.62)',glow:24, rings: 3, moons: 3, corona: 2 },
+    { label: 'SUPERNOVA',     core: '#FFF2D6', mid: '#FF6A3C', edge: '#2A0A06', limb: 'rgba(255,140,90,.6)',   seam: 'rgba(255,220,180,.65)',glow:27, rings: 3, moons: 3, corona: 3 },
+    { label: 'CELESTIAL',     core: '#E8EBFF', mid: '#5A6FE0', edge: '#0A0C24', limb: 'rgba(180,190,255,.6)',  seam: 'rgba(230,235,255,.65)',glow:29, rings: 3, moons: 4, corona: 3 },
+    { label: 'EMPYREAN',      core: '#FFF6D0', mid: '#FFD24C', edge: '#241A06', limb: 'rgba(255,236,160,.62)', seam: 'rgba(255,246,208,.68)',glow:31, rings: 3, moons: 4, corona: 4 },
+    { label: 'TRANSCENDENT',  core: '#F2E9FF', mid: '#8C5FD9', edge: '#1A0F2E', limb: 'rgba(200,150,255,.55)', seam: 'rgba(230,200,255,.68)',glow:34, rings: 4, moons: 4, corona: 4 },
+    { label: 'ASCENDANT',     core: '#FFFFFF', mid: '#C9A8FF', edge: '#140A28', limb: 'rgba(255,255,255,.65)', seam: 'rgba(255,220,255,.72)',glow:38, rings: 4, moons: 5, corona: 5 },
   ];
+  // 20 ascending thresholds per difficulty, front-loaded via a ^1.5 curve --
+  // early stages come quickly, later ones take real sustained score. `max`
+  // is each tier's old top-stage score, so a maxed-out run still lands
+  // roughly where it used to.
+  function buildThresholds(max) {
+    const th = [0];
+    const n = PLANET_STAGES.length - 1;
+    for (let i = 1; i <= n; i++) th.push(Math.round(max * Math.pow(i / n, 1.5)));
+    return th;
+  }
+  const STAGE_THRESH = {
+    easy:    buildThresholds(1000),
+    normal:  buildThresholds(800),
+    hard:    buildThresholds(560),
+    extreme: buildThresholds(380),
+  };
   function stageFor(diff, s) {
     const th = STAGE_THRESH[diff];
     let idx = 0;
@@ -884,8 +916,35 @@
       ctx.beginPath(); ctx.arc(cx, cy, R_ORBIT, a - w, a + w); ctx.stroke();
     }
 
-    // planet -- palette follows its current progression stage
+    // planet -- palette, rings, moons and corona all follow the current
+    // progression stage. Corona and rings are drawn behind the planet body
+    // (so the body's own fill naturally occludes their "front" half); moons
+    // are drawn after, so they read clearly on top.
     const ps = PLANET_STAGES[planetStage];
+
+    if (ps.corona > 0) {
+      const pulse = 0.6 + 0.4 * Math.sin(t * 2.2);
+      const cr = R_PLANET * (1.6 + ps.corona * 0.28) * pulse;
+      const cg = ctx.createRadialGradient(cx, cy, R_PLANET * 0.9, cx, cy, cr);
+      cg.addColorStop(0, ps.limb);
+      cg.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = cg;
+      ctx.beginPath(); ctx.arc(cx, cy, cr, 0, 6.2832); ctx.fill();
+    }
+
+    for (let i = 0; i < ps.rings; i++) {
+      const rr = R_PLANET * (1.5 + i * 0.32);
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(0.42);
+      ctx.strokeStyle = ps.limb;
+      ctx.lineWidth = Math.max(0.6, 1.6 - i * 0.3) * u;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, rr, rr * 0.34, 0, 0, 6.2832);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     if (ps.glow > 0) { ctx.shadowColor = ps.core; ctx.shadowBlur = ps.glow * u; }
     const g = ctx.createRadialGradient(
       cx - R_PLANET * 0.4, cy - R_PLANET * 0.45, R_PLANET * 0.1,
@@ -906,6 +965,16 @@
       const yy = cy - R_PLANET + (R_PLANET * 2 * i) / 4;
       const hw = Math.sqrt(Math.max(0, R_PLANET * R_PLANET - (yy - cy) * (yy - cy)));
       ctx.beginPath(); ctx.moveTo(cx - hw, yy); ctx.lineTo(cx + hw, yy); ctx.stroke();
+    }
+
+    for (let i = 0; i < ps.moons; i++) {
+      const ma = t * (0.35 + i * 0.12) + i * 2.1;
+      const mr = R_PLANET * (2.0 + i * 0.5);
+      const mx = cx + Math.cos(ma) * mr, my = cy + Math.sin(ma) * mr * 0.5;
+      ctx.beginPath();
+      ctx.arc(mx, my, (2 + i * 0.3) * u, 0, 6.2832);
+      ctx.fillStyle = ps.core;
+      ctx.fill();
     }
 
     // sparks
