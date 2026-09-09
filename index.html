@@ -102,6 +102,13 @@
   .diff:hover{color:var(--ice); border-color:var(--slate)}
   .diff:focus-visible{outline:2px solid var(--sodium); outline-offset:2px}
   .diff[aria-pressed="true"]{color:var(--sodium); border-color:var(--sodium)}
+  .diff[data-diff="extreme"]{color:hsl(280,75%,72%); border-color:hsl(280,45%,42%)}
+  .diff[data-diff="extreme"]:hover{color:#fff; border-color:hsl(280,80%,62%)}
+  .diff[data-diff="extreme"][aria-pressed="true"]{
+    color:#fff; border-color:hsl(280,90%,68%);
+    animation:extremeHue 4s linear infinite;
+  }
+  @keyframes extremeHue{to{filter:hue-rotate(360deg)}}
   .prompt{
     font-family:var(--mono); font-size:11px; letter-spacing:.26em;
     color:var(--sodium); margin:26px 0 0;
@@ -172,6 +179,7 @@
         <button class="diff" type="button" data-diff="easy">EASY</button>
         <button class="diff" type="button" data-diff="normal">NORMAL</button>
         <button class="diff" type="button" data-diff="hard">HARD</button>
+        <button class="diff" type="button" data-diff="extreme">EXTREME</button>
       </div>
       <div class="keys">
         <span class="key">CLICK</span><span class="key">SPACE</span><span class="key">TAP</span>
@@ -194,6 +202,7 @@
         <button class="diff" type="button" data-diff="easy">EASY</button>
         <button class="diff" type="button" data-diff="normal">NORMAL</button>
         <button class="diff" type="button" data-diff="hard">HARD</button>
+        <button class="diff" type="button" data-diff="extreme">EXTREME</button>
       </div>
       <button class="prompt blink playBtn" type="button" id="againPrompt">PRESS TO RELAUNCH</button>
     </div>
@@ -229,6 +238,21 @@
   let W = 0, H = 0, cx = 0, cy = 0, u = 1, spawnR = 800;
   let R_PLANET = 52, R_ORBIT = 155, SHIP = 9;
   let stars = [];
+
+  // EXTREME mode's background: a handful of slow, drifting, hue-cycling
+  // glow blobs, generated once. Pure functions of time, so no per-frame
+  // state and no resize bookkeeping needed.
+  const psyBlobs = Array.from({ length: 6 }, (_, i) => ({
+    hueBase: (360 / 6) * i + Math.random() * 40,
+    hueSpeed: 8 + Math.random() * 10,       // deg/s
+    freqX: 0.05 + Math.random() * 0.05,
+    freqY: 0.04 + Math.random() * 0.06,
+    phaseX: Math.random() * 6.283,
+    phaseY: Math.random() * 6.283,
+    ampXr: 0.26 + Math.random() * 0.18,     // fraction of W
+    ampYr: 0.26 + Math.random() * 0.18,     // fraction of H
+    radiusR: 0.16 + Math.random() * 0.10,   // fraction of min(W,H)
+  }));
 
   function resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -304,6 +328,7 @@
     easy:   { label: 'EASY',   speedBase: 92,  speedRamp: 1.6, speedCap: 240, cadenceBase: 1.45, cadenceFloor: 0.42, cadenceRamp: 0.008, dualAt: 65, dualChance: 0.18, initialDelay: 1.8 },
     normal: { label: 'NORMAL', speedBase: 108, speedRamp: 2.3, speedCap: 300, cadenceBase: 1.25, cadenceFloor: 0.34, cadenceRamp: 0.011, dualAt: 48, dualChance: 0.28, initialDelay: 1.5 },
     hard:   { label: 'HARD',   speedBase: 122, speedRamp: 2.7, speedCap: 330, cadenceBase: 0.82, cadenceFloor: 0.15, cadenceRamp: 0.018, dualAt: 14, dualChance: 0.5, initialDelay: 0.9 },
+    extreme:{ label: 'EXTREME',speedBase: 138, speedRamp: 3.2, speedCap: 380, cadenceBase: 0.55, cadenceFloor: 0.09, cadenceRamp: 0.024, dualAt: 5,  dualChance: 0.62, initialDelay: 0.6 },
   };
   let difficulty = 'normal';
   try {
@@ -559,16 +584,51 @@
   }
 
   /* ---------- draw ---------- */
-  function draw(now) {
-    ctx.setTransform(Math.min(window.devicePixelRatio || 1, 2), 0, 0, Math.min(window.devicePixelRatio || 1, 2), 0, 0);
+  // EXTREME's vivid, shifting backdrop. Drawn instead of the flat void
+  // fill. Debris/ship colors are untouched -- only the backdrop gets loud --
+  // and a dark vignette keeps the play area around the orbit legible, so
+  // the extra visual noise mostly bites at the screen edges, where debris
+  // is still far out and there's time to react.
+  function drawPsy(t) {
+    const tt = REDUCE ? 0 : t; // fully static (but still colorful) when reduced motion is on
     ctx.fillStyle = '#070A14';
     ctx.fillRect(0, 0, W, H);
+
+    ctx.globalCompositeOperation = 'lighter';
+    for (const b of psyBlobs) {
+      const x = W / 2 + Math.sin(tt * b.freqX + b.phaseX) * W * b.ampXr;
+      const y = H / 2 + Math.cos(tt * b.freqY + b.phaseY) * H * b.ampYr;
+      const hue = (b.hueBase + tt * b.hueSpeed) % 360;
+      const r = Math.min(W, H) * b.radiusR;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, 'hsla(' + hue.toFixed(1) + ',95%,62%,0.5)');
+      g.addColorStop(1, 'hsla(' + hue.toFixed(1) + ',95%,55%,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, 6.2832); ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+
+    const vg = ctx.createRadialGradient(cx, cy, R_ORBIT * 0.25, cx, cy, R_ORBIT * 2.4);
+    vg.addColorStop(0, 'rgba(7,10,20,0.6)');
+    vg.addColorStop(0.7, 'rgba(7,10,20,0.25)');
+    vg.addColorStop(1, 'rgba(7,10,20,0)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  function draw(now) {
+    ctx.setTransform(Math.min(window.devicePixelRatio || 1, 2), 0, 0, Math.min(window.devicePixelRatio || 1, 2), 0, 0);
+    const t = now / 1000;
+    if (difficulty === 'extreme') {
+      drawPsy(t);
+    } else {
+      ctx.fillStyle = '#070A14';
+      ctx.fillRect(0, 0, W, H);
+    }
 
     if (shake > 0.4) {
       ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
     }
-
-    const t = now / 1000;
 
     // starfield, slow rotation about the planet
     const drift = t * 0.012;
