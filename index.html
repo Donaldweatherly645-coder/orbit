@@ -400,21 +400,30 @@
     { label: 'TRANSCENDENT',  core: '#F2E9FF', mid: '#8C5FD9', edge: '#1A0F2E', limb: 'rgba(200,150,255,.55)', seam: 'rgba(230,200,255,.68)',glow:34, rings: 4, moons: 4, corona: 4 },
     { label: 'ASCENDANT',     core: '#FFFFFF', mid: '#C9A8FF', edge: '#140A28', limb: 'rgba(255,255,255,.65)', seam: 'rgba(255,220,255,.72)',glow:38, rings: 4, moons: 5, corona: 5 },
   ];
-  // 20 ascending thresholds per difficulty, front-loaded via a ^1.5 curve --
-  // early stages come quickly, later ones take real sustained score. `max`
-  // is each tier's old top-stage score, so a maxed-out run still lands
-  // roughly where it used to.
-  function buildThresholds(max) {
+  // 20 ascending thresholds per difficulty. Each stage's SCORE GAP (not the
+  // cumulative total) ramps up linearly from minGap to maxGap, so every
+  // transition -- including the very first -- takes a real, deliberate
+  // stretch of scoring, not one lucky high-combo spark catch (a maxed x9
+  // combo spark is worth 90 -- EASY/NORMAL's minGap clears that on its own;
+  // HARD/EXTREME's is a bit lower to keep the top stage reachable within
+  // their much shorter typical runs). Gaps keep growing toward the end, so
+  // the top stage is a genuine achievement, not something a typical run
+  // casually passes through.
+  function buildThresholds(minGap, maxGap) {
+    const n = PLANET_STAGES.length - 1; // 19 gaps
     const th = [0];
-    const n = PLANET_STAGES.length - 1;
-    for (let i = 1; i <= n; i++) th.push(Math.round(max * Math.pow(i / n, 1.5)));
+    let cum = 0;
+    for (let i = 0; i < n; i++) {
+      cum += minGap + (maxGap - minGap) * (i / (n - 1));
+      th.push(Math.round(cum));
+    }
     return th;
   }
   const STAGE_THRESH = {
-    easy:    buildThresholds(1000),
-    normal:  buildThresholds(800),
-    hard:    buildThresholds(560),
-    extreme: buildThresholds(380),
+    easy:    buildThresholds(110, 480),
+    normal:  buildThresholds(95,  400),
+    hard:    buildThresholds(68,  290),
+    extreme: buildThresholds(46,  200),
   };
   function stageFor(diff, s) {
     const th = STAGE_THRESH[diff];
