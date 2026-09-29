@@ -16,6 +16,8 @@ Your ship is locked in a fixed orbit around the planet. Press the one button to 
 - **Survive long enough and the planet transforms.** It progresses through 20 stages as your score climbs -- from a dull, dormant rock, through molten and crystalline forms, into something increasingly cosmic: rings appear, then moons, then a pulsing corona, building toward a final glowing, many-ringed, many-mooned form. Every stage takes a real, deliberate stretch of score to reach -- even the first one costs more than a single lucky spark catch -- and the gap keeps growing, so reaching the final form is a genuine achievement, not something a run just passes through on the way. How much score each stage takes depends on the difficulty, scaled so even a strong EXTREME run can see it all the way through.
 - Take a hit without a shield up and it's over.
 
+Every run has its own soundtrack: a looping synthwave track with a catchy lead hook. It plays faster on harder difficulties and fades out when you crash. `M` or the SOUND button mutes it along with the sound effects.
+
 | Input | Action |
 |---|---|
 | Click / Tap | Flip orbit direction |
