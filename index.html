@@ -366,14 +366,23 @@
     stageUp:     () => tone(320, 900, 0.35, 'sine', 0.09),
   };
   /* ---------- music ---------- */
-  // A short synthwave loop, sequenced live with Web Audio: Am-F-C-G under an
-  // octave-bouncing bass, soft pads, four-on-the-floor drums and an echoing
-  // lead hook. It starts with each run, plays faster on harder difficulties,
-  // and fades out when you crash.
+  // An adaptive synthwave score, sequenced live with Web Audio over an
+  // Am-F-C-G loop. Two things steer it, and every change lands on the beat
+  // grid so it never cuts or jumps:
+  //  - tier: how far you've made it (the planet stage). Each tier adds a
+  //    layer -- an arpeggio, then big detuned-saw chords, a driving bass and
+  //    drum fills, then key changes up for the late game -- and nudges the
+  //    tempo up. Tier changes wait for the next 4-bar phrase and hit with a
+  //    crash cymbal.
+  //  - heat: how intense the action is right now (debris closing in, UFOs,
+  //    shots, a hot spark chain). Heat opens up the filters, doubles the
+  //    hi-hats, switches the bass to 16ths and rolls the snare into the
+  //    next bar, then settles back down when things calm.
   const MUSIC_BPM = { easy: 104, normal: 116, hard: 128, extreme: 140 };
-  const MUSIC_VOL = 0.5;
+  const MUSIC_VOL = 0.42;
   const BASS = [33, 29, 36, 31];                                   // A1 F1 C2 G1
   const PADS = [[57, 60, 64], [57, 60, 65], [55, 60, 64], [55, 59, 62]];
+  const ARP  = [[69, 72, 76, 81], [69, 72, 77, 81], [67, 72, 76, 79], [67, 71, 74, 79]];
   // The hook: [16th-note step within the 8-bar loop, MIDI note, length in 16ths]
   const LEAD = [
     [0,69,2],[3,72,1],[4,76,3],[8,74,2],[10,72,2],[12,76,4],
@@ -387,12 +396,20 @@
   ];
   const LEAD_AT = {};
   for (const [at, m, len] of LEAD) LEAD_AT[at] = [m, len];
+  const TIER_AT  = [0, 2, 5, 9, 14];   // planet stage that unlocks each music tier
+  const TIER_KEY = [0, 0, 0, 2, 3];    // semitones up: the late game modulates
+  const TIER_BPM = 3;                  // tempo added per tier
+  function musicTierFor(stage) {
+    let t = 0;
+    for (let i = 1; i < TIER_AT.length; i++) if (stage >= TIER_AT[i]) t = i;
+    return t;
+  }
   const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
   let noiseBuf = null;
-  function noiseHit(a, out, t, dur, vol, type, freq) {
+  function noiseHit(a, dest, t, dur, vol, type, freq) {
     if (!noiseBuf || noiseBuf.sampleRate !== a.sampleRate) {
-      noiseBuf = a.createBuffer(1, a.sampleRate, a.sampleRate);
+      noiseBuf = a.createBuffer(1, a.sampleRate * 2, a.sampleRate);
       const d = noiseBuf.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     }
@@ -401,56 +418,166 @@
     const g = a.createGain();
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    src.connect(f); f.connect(g); g.connect(out);
-    src.start(t, Math.random() * 0.5); src.stop(t + dur + 0.02);
+    src.connect(f); f.connect(g); g.connect(dest);
+    src.start(t, Math.random() * 0.4); src.stop(t + dur + 0.02);
+    return g;
   }
-  function voice(a, out, t, freq, dur, type, vol, cutoff) {
+  function voice(a, dest, t, freq, dur, type, vol, cutoff, attack) {
     const o = a.createOscillator(), f = a.createBiquadFilter(), g = a.createGain();
     o.type = type; o.frequency.setValueAtTime(freq, t);
     f.type = 'lowpass'; f.frequency.value = cutoff;
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(vol, t + 0.008);
+    g.gain.linearRampToValueAtTime(vol, t + (attack || 0.008));
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(f); f.connect(g); g.connect(out);
+    o.connect(f); f.connect(g); g.connect(dest);
     o.start(t); o.stop(t + dur + 0.05);
     return g;
   }
-  function kick(a, out, t) {
-    const o = a.createOscillator(), g = a.createGain();
-    o.frequency.setValueAtTime(150, t);
-    o.frequency.exponentialRampToValueAtTime(42, t + 0.12);
-    g.gain.setValueAtTime(0.35, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
-    o.connect(g); g.connect(out);
-    o.start(t); o.stop(t + 0.26);
-  }
-  // Schedules everything that sounds on one 16th-note step of the song.
-  function musicStep(a, bus, step, t, sixteenth) {
-    const bar = Math.floor(step / 16) % 4, s = step % 16;
-    if (s % 4 === 0) kick(a, bus.out, t);
-    if (s === 4 || s === 12) noiseHit(a, bus.out, t, 0.14, 0.16, 'bandpass', 1800);
-    if (s % 4 === 2) noiseHit(a, bus.out, t, 0.04, 0.07, 'highpass', 7000);
-    if (s % 2 === 0) {
-      const m = BASS[bar] + (s % 4 === 2 ? 12 : 0);
-      voice(a, bus.out, t, mtof(m), sixteenth * 1.8, 'sawtooth', 0.11, 700);
+  // three detuned saws swelling in: the big "epic" chord sound
+  function swell(a, bus, t, freq, dur, vol, cutoff) {
+    const f = a.createBiquadFilter(), g = a.createGain();
+    f.type = 'lowpass'; f.frequency.value = cutoff;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(vol, t + Math.min(0.35, dur * 0.25));
+    g.gain.setValueAtTime(vol, t + dur * 0.7);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    for (const det of [-14, 0, 14]) {
+      const o = a.createOscillator();
+      o.type = 'sawtooth'; o.frequency.value = freq; o.detune.value = det;
+      o.connect(f); o.start(t); o.stop(t + dur + 0.05);
     }
-    if (s === 0) for (const m of PADS[bar]) voice(a, bus.out, t, mtof(m), sixteenth * 15, 'triangle', 0.03, 1800);
-    const note = step >= 32 && LEAD_AT[step % 128];   // two bars of groove before the hook
+    f.connect(g); g.connect(bus.out); g.connect(bus.verb);
+  }
+  function drum(a, dest, t, f1, f2, dur, vol) {
+    const o = a.createOscillator(), g = a.createGain();
+    o.frequency.setValueAtTime(f1, t);
+    o.frequency.exponentialRampToValueAtTime(f2, t + dur * 0.5);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(dest);
+    o.start(t); o.stop(t + dur + 0.02);
+    return g;
+  }
+  function snare(a, bus, t, vol) {
+    noiseHit(a, bus.out, t, 0.16, 0.16 * vol, 'bandpass', 1800).connect(bus.verb);
+    drum(a, bus.out, t, 200, 150, 0.09, 0.1 * vol);
+  }
+  function makeImpulse(a, secs) {
+    const len = Math.floor(a.sampleRate * secs), buf = a.createBuffer(2, len, a.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = buf.getChannelData(ch);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+    }
+    return buf;
+  }
+  // Mixer: a dry path plus an echo (for the lead) and a big reverb.
+  function makeBus(a, dest, sixteenth) {
+    const echo = a.createDelay(1), fb = a.createGain(), wet = a.createGain();
+    echo.delayTime.value = sixteenth * 3;
+    fb.gain.value = 0.32; wet.gain.value = 0.26;
+    echo.connect(fb); fb.connect(echo); echo.connect(wet); wet.connect(dest);
+    const verb = a.createConvolver(), vw = a.createGain();
+    verb.buffer = makeImpulse(a, 2.6); vw.gain.value = 0.3;
+    verb.connect(vw); vw.connect(dest);
+    return { out: dest, echo, verb };
+  }
+
+  // Schedules everything that sounds on one 16th-note step of the song.
+  // mix = { tier, heat, key, crash }
+  function musicStep(a, bus, step, t, six, mix) {
+    const bar = Math.floor(step / 16) % 4, s = step % 16, loop = step % 128;
+    const { tier, heat, key } = mix;
+    const n = (m) => mtof(m + key);
+    const lastBar = loop >= 112;
+
+    // drums
+    if (mix.crash && s === 0) noiseHit(a, bus.out, t, 1.8, 0.12, 'highpass', 5000).connect(bus.verb);
+    if (s % 4 === 0) drum(a, bus.out, t, 150, 42, 0.26, tier >= 2 ? 0.42 : 0.35);
+    if (tier >= 4 && s === 10) drum(a, bus.out, t, 150, 42, 0.22, 0.3);
+    if (tier >= 2 && lastBar && s >= 8) {
+      // tom fill into the next phrase
+      if (s % 2 === 0) drum(a, bus.out, t, 220 - s * 8, 90 - s * 3, 0.22, 0.22).connect(bus.verb);
+      else if (s >= 13) snare(a, bus, t, 0.8);
+    } else if (heat > 0.75 && bar === 3 && s >= 12) {
+      snare(a, bus, t, 0.35 + (s - 12) * 0.2);                   // tension roll
+    } else if (s === 4 || s === 12) {
+      snare(a, bus, t, 1);
+    }
+    if (heat > 0.4 || tier >= 3) {
+      noiseHit(a, bus.out, t, 0.035, s % 4 === 2 ? 0.07 : 0.035, 'highpass', 7000);
+    } else if (s % 4 === 2) {
+      noiseHit(a, bus.out, t, 0.04, 0.07, 'highpass', 7000);
+    }
+
+    // bass: bouncing 8ths, or driving 16ths once things heat up
+    if (tier >= 2 || heat > 0.6) {
+      const m = BASS[bar] + (s % 4 === 2 ? 12 : 0);
+      voice(a, bus.out, t, n(m), six * 0.9, 'sawtooth', 0.1, 500 + heat * 700);
+    } else if (s % 2 === 0) {
+      const m = BASS[bar] + (s % 4 === 2 ? 12 : 0);
+      voice(a, bus.out, t, n(m), six * 1.8, 'sawtooth', 0.11, 700);
+    }
+
+    // chords: soft pads early, huge swelling saws later
+    if (s === 0) {
+      const cutoff = 900 + heat * 2000 + tier * 250;
+      if (tier >= 2) {
+        for (const m of PADS[bar]) swell(a, bus, t, n(m), six * 16, 0.018, cutoff);
+        swell(a, bus, t, n(PADS[bar][0] - 12), six * 16, 0.016, cutoff);
+      } else {
+        for (const m of PADS[bar]) voice(a, bus.out, t, n(m), six * 15, 'triangle', 0.03, 1800).connect(bus.verb);
+      }
+    }
+
+    // arpeggio sparkle
+    if (tier >= 1 || heat > 0.5) {
+      const m = ARP[bar][s % 4] + (tier >= 3 && s % 8 >= 4 ? 12 : 0);
+      voice(a, bus.out, t, n(m), six * 0.8, 'square', 0.014 + heat * 0.014, 1500 + heat * 2500).connect(bus.echo);
+    }
+
+    // lead hook, after two bars of groove; doubled an octave up later on
+    const note = step >= 32 && LEAD_AT[loop];
     if (note) {
-      const g = voice(a, bus.out, t, mtof(note[0]), sixteenth * note[1] * 0.95, 'square', 0.05, 2600);
-      g.connect(bus.echo);
+      const dur = six * note[1] * 0.95;
+      const g = voice(a, bus.out, t, n(note[0]), dur, 'square', 0.05, 2400 + heat * 1200);
+      g.connect(bus.echo); g.connect(bus.verb);
+      if (tier >= 2) voice(a, bus.out, t, n(note[0] + 12), dur, 'sawtooth', 0.018, 3500).connect(bus.echo);
     }
   }
 
-  const music = { gain: null, bus: null, step: 0, next: 0, sixteenth: 0, timer: 0 };
+  const music = { gain: null, bus: null, step: 0, next: 0, sixteenth: 0, timer: 0,
+                  tier: 0, key: 0, heat: 0 };
+  function musicTempo() {
+    return 15 / (MUSIC_BPM[difficulty] + music.tier * TIER_BPM);
+  }
   function musicTick() {
     const a = actx;
     if (!a || a.state !== 'running') return;
     if (music.next < a.currentTime) music.next = a.currentTime + 0.02;
     while (music.next < a.currentTime + 0.12) {
-      musicStep(a, music.bus, music.step, music.next, music.sixteenth);
+      let crash = false;
+      // tier changes wait for the next 4-bar phrase so they land musically
+      if (music.step % 64 === 0) {
+        const want = musicTierFor(planetStage);
+        if (want !== music.tier) {
+          music.tier = want; music.key = TIER_KEY[want]; crash = true;
+          music.sixteenth = musicTempo();
+          music.bus.echo.delayTime.setTargetAtTime(music.sixteenth * 3, music.next, 0.2);
+        }
+      }
+      musicStep(a, music.bus, music.step, music.next, music.sixteenth,
+        { tier: music.tier, heat: music.heat, key: music.key, crash });
       music.step++; music.next += music.sixteenth;
     }
+  }
+  // How hectic the screen is right now, 0..1. Rises quickly, cools slowly.
+  function musicHeat(dt) {
+    let threat = Math.min(0.25, elapsed / 400) + (combo - 1) * 0.025;
+    for (const d of debris) if (Math.hypot(d.x - cx, d.y - cy) < R_ORBIT * 2.2) threat += 0.06;
+    threat += ufos.length * 0.18 + shots.length * 0.12;
+    threat = Math.min(1, threat);
+    const rate = threat > music.heat ? 2.5 : 0.35;
+    music.heat += (threat - music.heat) * Math.min(1, dt * rate);
   }
   function musicStart() {
     const a = ac(); if (!a) return;
@@ -458,12 +585,9 @@
     const g = a.createGain();
     g.gain.value = muted ? 0 : MUSIC_VOL;
     g.connect(a.destination);
-    music.sixteenth = 15 / MUSIC_BPM[difficulty];
-    const echo = a.createDelay(1), fb = a.createGain(), wet = a.createGain();
-    echo.delayTime.value = music.sixteenth * 3;
-    fb.gain.value = 0.35; wet.gain.value = 0.3;
-    echo.connect(fb); fb.connect(echo); echo.connect(wet); wet.connect(g);
-    music.gain = g; music.bus = { out: g, echo };
+    music.tier = 0; music.key = 0; music.heat = 0;
+    music.sixteenth = musicTempo();
+    music.gain = g; music.bus = makeBus(a, g, music.sixteenth);
     music.step = 0; music.next = a.currentTime + 0.06;
     music.timer = setInterval(musicTick, 25);
     musicTick();
@@ -474,8 +598,8 @@
     const g = music.gain, t = actx.currentTime;
     g.gain.cancelScheduledValues(t);
     g.gain.setValueAtTime(g.gain.value, t);
-    g.gain.linearRampToValueAtTime(0, t + (quick ? 0.05 : 0.9));
-    setTimeout(() => g.disconnect(), 1500);
+    g.gain.linearRampToValueAtTime(0, t + (quick ? 0.05 : 1.4));
+    setTimeout(() => g.disconnect(), 2000);
   }
   // Silence everything while the app is in the background.
   document.addEventListener('visibilitychange', () => {
@@ -516,17 +640,12 @@
   // tiers, since there's more to survive and more UFOs to eat a hit from
   const SHIELD_DIFF = { easy: 26, normal: 22, hard: 17, extreme: 13 };
 
-  // planet progression: the planet visibly transforms through 20 stages as
-  // score climbs -- geological, then crystalline/bioluminescent, then
+  // planet progression: the planet visibly transforms through 20 stages the
+  // longer you survive -- geological, then crystalline/bioluminescent, then
   // cosmic, then stellar/mythic. Rings, moons, and a pulsing corona unlock
   // progressively alongside the palette, so later stages don't just look
   // different, they look genuinely more elaborate. Same 20-stage ladder on
-  // every difficulty -- only the score needed to reach each one differs,
-  // scaled to how long a typical run on that tier actually lasts (EXTREME
-  // runs are short, so its thresholds are much lower -- otherwise nobody
-  // playing it would ever see the later stages). The curve front-loads
-  // early stages (fast, satisfying first few transitions) and stretches
-  // out the later ones (the top stages are a real achievement).
+  // every difficulty -- only the pace differs (see STAGE_THRESH below).
   const PLANET_STAGES = [
     { label: 'DORMANT',       core: '#6E5C37', mid: '#3A3324', edge: '#141A2B', limb: 'rgba(168,203,230,.22)', seam: 'rgba(110,92,55,.5)',  glow: 0,  rings: 0, moons: 0, corona: 0 },
     { label: 'STIRRING',      core: '#7A6E5A', mid: '#443F33', edge: '#141522', limb: 'rgba(168,203,230,.26)', seam: 'rgba(130,120,95,.5)', glow: 2,  rings: 0, moons: 0, corona: 0 },
@@ -549,30 +668,32 @@
     { label: 'TRANSCENDENT',  core: '#F2E9FF', mid: '#8C5FD9', edge: '#1A0F2E', limb: 'rgba(200,150,255,.55)', seam: 'rgba(230,200,255,.68)',glow:34, rings: 4, moons: 4, corona: 4 },
     { label: 'ASCENDANT',     core: '#FFFFFF', mid: '#C9A8FF', edge: '#140A28', limb: 'rgba(255,255,255,.65)', seam: 'rgba(255,220,255,.72)',glow:38, rings: 4, moons: 5, corona: 5 },
   ];
-  // 20 ascending thresholds per difficulty. Each stage's SCORE GAP (not the
-  // cumulative total) ramps up linearly from minGap to maxGap, so every
-  // transition -- including the very first -- takes a real, deliberate
-  // stretch of scoring, not one lucky high-combo spark catch (a maxed x9
-  // combo spark is worth 90 -- EASY/NORMAL's minGap clears that on its own;
-  // HARD/EXTREME's is a bit lower to keep the top stage reachable within
-  // their much shorter typical runs). Gaps keep growing toward the end, so
-  // the top stage is a genuine achievement, not something a typical run
-  // casually passes through.
-  function buildThresholds(minGap, maxGap) {
+  // Stages track how long you've survived, not raw score: score snowballs
+  // with the spark multiplier, which made early stages fly by every few
+  // seconds for anyone chaining sparks. "Progress" is seconds alive plus a
+  // small bonus per spark caught, so good play still speeds things up, but
+  // only by a bit. On NORMAL each stage costs ~24s of progress at first,
+  // stretching to ~42s near the top, so the final form lands around the
+  // 8-10 minute mark: a real achievement, but within reach. EASY stretches
+  // the ladder a little; HARD and EXTREME shrink it, since their runs are
+  // shorter and far more intense.
+  const SPARK_PROGRESS = 1;   // seconds of progress per spark caught
+  const STAGE_PACE = { easy: 1.1, normal: 1, hard: 0.85, extreme: 0.75 };
+  function buildThresholds(pace) {
     const n = PLANET_STAGES.length - 1; // 19 gaps
     const th = [0];
     let cum = 0;
     for (let i = 0; i < n; i++) {
-      cum += minGap + (maxGap - minGap) * (i / (n - 1));
+      cum += (24 + 18 * (i / (n - 1))) * pace;
       th.push(Math.round(cum));
     }
     return th;
   }
   const STAGE_THRESH = {
-    easy:    buildThresholds(110, 480),
-    normal:  buildThresholds(95,  400),
-    hard:    buildThresholds(68,  290),
-    extreme: buildThresholds(46,  200),
+    easy:    buildThresholds(STAGE_PACE.easy),
+    normal:  buildThresholds(STAGE_PACE.normal),
+    hard:    buildThresholds(STAGE_PACE.hard),
+    extreme: buildThresholds(STAGE_PACE.extreme),
   };
   function stageFor(diff, s) {
     const th = STAGE_THRESH[diff];
@@ -778,6 +899,7 @@
     recentre(dt);
     const playing = state === 'play';
     if (playing) { elapsed += dt; score += dt * 8; }
+    if (playing && music.timer) musicHeat(dt);
 
     player.a += SPEED * player.dir * dt;
     const ppx = px(), ppy = py();
@@ -972,7 +1094,7 @@
     // planet progression: check for a stage-up on every frame score can
     // change, so it can never trigger more than one stage late
     if (playing) {
-      const newStage = stageFor(difficulty, score);
+      const newStage = stageFor(difficulty, elapsed + sparkCount * SPARK_PROGRESS);
       if (newStage > planetStage) {
         planetStage = newStage;
         const ps = PLANET_STAGES[planetStage];
