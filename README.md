@@ -31,6 +31,13 @@ Pick a difficulty from the title screen before launching. Every tier has its own
 
 Your best score is saved locally in your browser and shown on the title screen.
 
+## Install it on your phone
+
+Orbit works as a Home Screen app: it gets its own icon, opens full screen with no browser bars, and keeps working offline.
+
+- **iPhone / iPad (Safari):** open the game, tap **Share**, then **Add to Home Screen**.
+- **Android (Chrome):** open the menu (⋮), then **Install app** or **Add to Home screen**.
+
 ## Running it locally
 
 It's a single self-contained HTML file — no build step, no dependencies.
