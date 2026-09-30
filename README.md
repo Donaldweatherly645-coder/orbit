@@ -11,12 +11,29 @@ Your ship is locked in a fixed orbit around the planet. Press the one button to 
 - **Dodge** debris by timing your flips so you're never where a piece lands.
 - **Graze** debris closely without touching it for a small score bonus (a near miss).
 - **Grab sparks** as they appear on the orbit ring to build a score multiplier — the longer your streak, the more each spark is worth.
-- **Grab a shield** when one appears to survive your next hit — it absorbs one collision (debris, a UFO, or a shot) and breaks.
+- **Grab shields** to survive hits. They stack up to three layers (shown as rings around your ship and dots in the HUD); each hit breaks one layer, with a red "SHIELD -1" / "SHIELD DOWN" flash so you always know where you stand, plus a split second of grace to escape the cluster that hit you.
+- **Catch the violet hourglass** for three seconds of slow motion: every hazard crawls at 40% speed while your ship keeps full speed, then time eases back up to normal.
 - **Watch for UFOs.** They hover nearby, glow, and charge up before firing a shot straight at wherever you are the instant they finish charging. Touching one is as lethal as debris.
 - **Survive long enough and the planet transforms.** It progresses through 20 stages the longer you last -- from a dull, dormant rock, through molten and crystalline forms, into something increasingly cosmic: rings appear, then moons, then a pulsing corona, building toward a final glowing, many-ringed, many-mooned form. Stages are paced by survival time (each spark you catch adds a one-second bonus), not raw score, so a hot spark chain can't blow through them in seconds. On NORMAL the first stage takes about 20-25 seconds, the gaps stretch to about 40 seconds near the top, and the final form arrives around the 8-10 minute mark. EASY is paced a little slower; HARD and EXTREME a little faster, since their runs are shorter.
+- **Every new planet is a payday.** A shockwave bursts from the planet and wipes the screen clear of debris, shots and UFOs, time freezes for a beat, a reward chime plays, the planet's name lands in a banner -- and the soundtrack changes on the very next bar. You also get a random upgrade for the rest of the run:
+
+  | Upgrade | Rarity | Effect |
+  |---|---|---|
+  | Hull Patch | Common (can repeat) | +1 shield layer |
+  | Spark Magnet | Common | Grab pickups from further away |
+  | Steady Nerves | Common | Longer escape window after a hit |
+  | Dampener Field | Uncommon | New debris and UFO shots move 12% slower |
+  | Chrono Core | Uncommon | Slow motion lasts 5s and shows up more often |
+  | Signal Jammer | Uncommon | UFOs take longer to aim and fire less often |
+  | Echo Shield | Uncommon | Every 10 near misses restores a shield layer |
+  | Guardian Moon | Rare | A moon circles your ship and smashes debris (5s recharge) |
+  | Nova Pulse | Rare | Every 30s a shockwave clears the space around the planet |
+  | Last Stand | Rare | Once per run, survive a fatal hit with no shields -- the screen clears and time slows |
+
+  Upgrades you hold are listed along the bottom of the screen, the BUFFS counter in the top bar shows how many you have collected this run, and the game-over screen shows that count next to your all-time total.
 - Take a hit without a shield up and it's over.
 
-Every run has its own adaptive soundtrack: a synthwave track with a catchy lead hook that grows as you go. The further you get, the more it builds -- an arpeggio, then huge swelling chords, a driving bass and drum fills, then key changes and a faster tempo for the late game. It also reacts to the action in the moment, opening up and rolling the drums when debris and UFOs close in, and settling when things calm down. Every change lands on the beat, so it never cuts or jumps. Harder difficulties play it faster, it fades out when you crash, and `M` or the SOUND button mutes it along with the sound effects.
+Every run has its own adaptive soundtrack: a synthwave track with a catchy lead hook that grows as you go. The further you get, the more it builds -- an arpeggio, then huge swelling chords, a driving bass and drum fills, then key changes and a faster tempo for the late game. It also reacts to the action in the moment, opening up and rolling the drums when debris and UFOs close in, and settling when things calm down. Every change lands on the beat, so it never cuts or jumps. Harder difficulties play it faster, it fades out when you crash, and `M` or the SOUND button mutes it along with the sound effects. Every new planet changes the song: it usually lifts to a higher key, and the lead instrument, arpeggio and kick pattern rotate, announced by a cymbal crash and a quick fanfare. Slow motion gets its own musical treatment: the track brakes into a half-time version, every note bending down together like a slowing tape, with a darker, roomier mix. The arrangement is frozen for the whole effect -- even reaching a new planet mid-slow-mo waits until the speed-up has landed -- so it is always the same song slowing down and speeding back up. When slow motion ends, tempo, pitch and brightness glide back up over a couple of seconds as a transition, then a cymbal crash lands the song back on the beat.
 
 | Input | Action |
 |---|---|

@@ -51,7 +51,7 @@
   /* ---- telemetry bar ---- */
   #hud{
     position:absolute; top:0; left:0; right:0; z-index:2;
-    display:flex; align-items:flex-start; gap:28px;
+    display:flex; flex-wrap:wrap; align-items:flex-start; gap:12px 28px;
     padding:18px 20px; pointer-events:none;
     padding-top:max(18px, env(safe-area-inset-top));
     padding-left:max(20px, env(safe-area-inset-left));
@@ -59,7 +59,7 @@
     font-family:var(--mono); font-size:11px; letter-spacing:.14em;
   }
   .read{display:flex; flex-direction:column; gap:3px}
-  .read .k{color:var(--slate); font-size:9px; letter-spacing:.24em}
+  .read .k{color:var(--slate); font-size:9px; letter-spacing:.24em; white-space:nowrap}
   .read .v{
     font-size:22px; line-height:1; color:var(--ice);
     font-variant-numeric:tabular-nums; font-weight:500;
@@ -68,9 +68,25 @@
   #combo{margin-left:auto; align-items:flex-end; opacity:0; transition:opacity .18s}
   #combo.on{opacity:1}
   #combo .v{color:var(--sodium)}
-  #shieldBadge{opacity:0; transition:opacity .18s}
-  #shieldBadge.on{opacity:1}
-  #shieldBadge .v{color:#6FE3FF}
+  #shieldBadge{display:none}
+  #shieldBadge.on{display:flex}
+  #shieldBadge .v{color:#6FE3FF; letter-spacing:.12em}
+  #shieldBadge.hit .v{color:var(--danger)}
+  #buffs .v{color:#FFD24C}
+  #buffs.pop .v{animation:buffPop .6s cubic-bezier(.2,.7,.3,1)}
+  @keyframes buffPop{0%{transform:scale(1.8); color:#fff} 100%{transform:scale(1)}}
+  #slowBadge{display:none}
+  #slowBadge.on{display:flex}
+  #slowBadge .v{color:#B79CFF}
+  /* upgrades collected this run */
+  #items{
+    position:absolute; left:0; right:0; bottom:0; z-index:2; pointer-events:none;
+    display:flex; flex-wrap:wrap; justify-content:center; gap:6px;
+    padding:10px 14px; padding-bottom:max(12px, env(safe-area-inset-bottom));
+    font-family:var(--mono); font-size:9px; letter-spacing:.16em;
+  }
+  #items .chip{border:1px solid currentColor; padding:4px 7px; opacity:.8; background:rgba(7,10,20,.6)}
+  #items .chip.used{opacity:.3; text-decoration:line-through}
   #mute{
     pointer-events:auto; margin-left:14px; align-self:center;
     background:transparent; border:1px solid var(--line); color:var(--slate);
@@ -187,8 +203,10 @@
   }
   @media (max-width:520px){
     h1{font-size:50px} .panel{padding:30px 26px} .final{font-size:52px}
+    .read .v{font-size:19px}
+    #mute{margin-left:6px; padding:6px 8px}
     #hud{
-      gap:18px; padding:14px;
+      gap:10px 14px; padding:14px;
       padding-top:max(14px, env(safe-area-inset-top));
       padding-left:max(14px, env(safe-area-inset-left));
       padding-right:max(14px, env(safe-area-inset-right));
@@ -204,16 +222,20 @@
     <div class="read" id="score"><span class="k">SCORE</span><span class="v">0</span></div>
     <div class="read" id="best"><span class="k">BEST</span><span class="v">0</span></div>
     <div class="read" id="shieldBadge"><span class="k">SHIELD</span><span class="v">●</span></div>
+    <div class="read" id="buffs"><span class="k">BUFFS</span><span class="v">0</span></div>
+    <div class="read" id="slowBadge"><span class="k">SLOW-MO</span><span class="v">3.0</span></div>
     <div class="read" id="combo"><span class="k">CHAIN</span><span class="v">x1</span></div>
     <button id="mute" type="button" aria-pressed="false">SOUND ON</button>
   </div>
+
+  <div id="items"></div>
 
   <div id="overlay">
     <div class="panel" id="title">
       <p class="eyebrow">SINGLE-BUTTON ARCADE</p>
       <h1>ORBIT</h1>
       <div class="rule"></div>
-      <p class="blurb">Debris is falling toward the planet. You can only do one thing about it: reverse your orbit. Grab sparks to chain a multiplier and shields to survive a hit -- alien saucers will be shooting at you too.</p>
+      <p class="blurb">Debris is falling toward the planet. You can only do one thing about it: reverse your orbit. Grab sparks to chain a multiplier, stack up to three shields to survive hits, and catch an hourglass to slow time -- alien saucers will be shooting at you too.</p>
       <p class="bestLine">BEST <span id="titleBest">0</span></p>
       <p class="diffLabel">DIFFICULTY</p>
       <div class="diffs" role="group" aria-label="Difficulty" data-diffs>
@@ -239,6 +261,8 @@
         <div class="stat best"><span class="k">BEST</span><span class="v" id="stBest">0</span></div>
         <div class="stat"><span class="k">MODE</span><span class="v" id="stMode">NORMAL</span></div>
         <div class="stat"><span class="k">PLANET</span><span class="v" id="stPlanet">DORMANT</span></div>
+        <div class="stat"><span class="k">BUFFS</span><span class="v" id="stBuffs">0</span></div>
+        <div class="stat"><span class="k">ALL-TIME BUFFS</span><span class="v" id="stBuffsAll">0</span></div>
       </div>
       <p class="diffLabel">DIFFICULTY</p>
       <div class="diffs" role="group" aria-label="Difficulty" data-diffs>
@@ -274,9 +298,17 @@
     stBest: document.getElementById('stBest'),
     stMode: document.getElementById('stMode'),
     stPlanet: document.getElementById('stPlanet'),
+    stBuffs: document.getElementById('stBuffs'),
+    stBuffsAll: document.getElementById('stBuffsAll'),
+    buffs: document.getElementById('buffs'),
+    buffsV: document.querySelector('#buffs .v'),
     titleBest: document.getElementById('titleBest'),
     overlay: document.getElementById('overlay'),
     shieldBadge: document.getElementById('shieldBadge'),
+    shieldV: document.querySelector('#shieldBadge .v'),
+    slowBadge: document.getElementById('slowBadge'),
+    items: document.getElementById('items'),
+    slowV: document.querySelector('#slowBadge .v'),
   };
 
   /* ---------- geometry ---------- */
@@ -355,6 +387,20 @@
     const f = a.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 1400;
     src.connect(f); f.connect(g); g.connect(a.destination); src.start();
   }
+  // several short notes in a row, scheduled on the audio clock
+  function chime(freqs, gap, delay, type, vol) {
+    const a = ac(); if (!a || muted) return;
+    freqs.forEach((f, i) => {
+      const t = a.currentTime + delay + i * gap;
+      const o = a.createOscillator(), g = a.createGain();
+      o.type = type; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(vol, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+      o.connect(g); g.connect(a.destination);
+      o.start(t); o.stop(t + 0.55);
+    });
+  }
   const sfx = {
     flip:  () => tone(300, 210, 0.07, 'square', 0.05),
     spark: () => { tone(680, 1080, 0.13, 'triangle', 0.09); },
@@ -363,7 +409,16 @@
     ufoFire:     () => tone(520, 170, 0.16, 'sawtooth', 0.07),
     shieldGet:   () => tone(500, 900, 0.16, 'triangle', 0.08),
     shieldBreak: () => { tone(700, 200, 0.18, 'square', 0.09); hiss(0.15, 0.06); },
-    stageUp:     () => tone(320, 900, 0.35, 'sine', 0.09),
+    slowIn:      () => { tone(520, 90, 0.5, 'sine', 0.09); hiss(0.35, 0.05); },
+    slowOut:     () => tone(140, 700, 0.9, 'triangle', 0.05),
+    // a rising major arpeggio; rarer upgrades keep climbing and sparkle
+    reward: (rarity) => {
+      chime([523, 659, 784, 1047], 0.075, 0, 'triangle', 0.08);
+      if (rarity >= 1) chime([1319, 1568], 0.075, 0.3, 'triangle', 0.07);
+      if (rarity >= 2) { chime([2093, 2637, 3136, 4186], 0.05, 0.45, 'sine', 0.05); hiss(0.6, 0.04); }
+    },
+    nova: () => { tone(90, 40, 0.5, 'sine', 0.16); hiss(0.4, 0.06); },
+    moonHit: () => tone(900, 300, 0.12, 'square', 0.05),
   };
   /* ---------- music ---------- */
   // An adaptive synthwave score, sequenced live with Web Audio over an
@@ -396,9 +451,17 @@
   ];
   const LEAD_AT = {};
   for (const [at, m, len] of LEAD) LEAD_AT[at] = [m, len];
-  const TIER_AT  = [0, 2, 5, 9, 14];   // planet stage that unlocks each music tier
-  const TIER_KEY = [0, 0, 0, 2, 3];    // semitones up: the late game modulates
+  const TIER_AT  = [0, 2, 4, 9, 13];   // planet stage that unlocks each music tier
   const TIER_BPM = 3;                  // tempo added per tier
+  // Every planet changes the song. Its key (semitones from A minor) mostly
+  // lifts a step at a time -- the classic "key change" payoff -- and dips
+  // back down only where a new tier lands with a bigger arrangement. On top
+  // of that the lead's sound, the arpeggio pattern and the kick pattern
+  // rotate, so no two neighbouring planets sound alike.
+  const STAGE_KEY = [0, 2, 3, 5, 0, 2, 3, 5, 7, 2, 3, 5, 7, 3, 5, 7, 8, 5, 7, 8];
+  const LEAD_VOICES = [['square', 2400, 0.05], ['sawtooth', 2000, 0.045], ['triangle', 5000, 0.08], ['square', 3400, 0.045]];
+  const ARP_ORDER = [[0, 1, 2, 3], [3, 2, 1, 0], [0, 2, 1, 3]];
+  const FINALE_AT = 17;                // planet where the lead gains a harmony
   function musicTierFor(stage) {
     let t = 0;
     for (let i = 1; i < TIER_AT.length; i++) if (stage >= TIER_AT[i]) t = i;
@@ -407,6 +470,9 @@
   const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
   let noiseBuf = null;
+  // Shared pitch-bend source (cents) wired into every oscillator's detune, so
+  // slow motion can bend every sounding note at once, like a tape slowing.
+  let curBend = null;
   function noiseHit(a, dest, t, dur, vol, type, freq) {
     if (!noiseBuf || noiseBuf.sampleRate !== a.sampleRate) {
       noiseBuf = a.createBuffer(1, a.sampleRate * 2, a.sampleRate);
@@ -425,6 +491,7 @@
   function voice(a, dest, t, freq, dur, type, vol, cutoff, attack) {
     const o = a.createOscillator(), f = a.createBiquadFilter(), g = a.createGain();
     o.type = type; o.frequency.setValueAtTime(freq, t);
+    if (curBend) curBend.connect(o.detune);
     f.type = 'lowpass'; f.frequency.value = cutoff;
     g.gain.setValueAtTime(0.0001, t);
     g.gain.linearRampToValueAtTime(vol, t + (attack || 0.008));
@@ -444,6 +511,7 @@
     for (const det of [-14, 0, 14]) {
       const o = a.createOscillator();
       o.type = 'sawtooth'; o.frequency.value = freq; o.detune.value = det;
+      if (curBend) curBend.connect(o.detune);
       o.connect(f); o.start(t); o.stop(t + dur + 0.05);
     }
     f.connect(g); g.connect(bus.out); g.connect(bus.verb);
@@ -452,6 +520,7 @@
     const o = a.createOscillator(), g = a.createGain();
     o.frequency.setValueAtTime(f1, t);
     o.frequency.exponentialRampToValueAtTime(f2, t + dur * 0.5);
+    if (curBend) curBend.connect(o.detune);
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     o.connect(g); g.connect(dest);
@@ -470,30 +539,39 @@
     }
     return buf;
   }
-  // Mixer: a dry path plus an echo (for the lead) and a big reverb.
+  // Mixer: a dry path plus an echo (for the lead) and a big reverb, all
+  // through a master low-pass ("tone") that slow motion closes down, plus
+  // the shared pitch bend.
   function makeBus(a, dest, sixteenth) {
-    const echo = a.createDelay(1), fb = a.createGain(), wet = a.createGain();
+    const tone = a.createBiquadFilter();
+    tone.type = 'lowpass'; tone.frequency.value = 18000; tone.Q.value = 0.7;
+    tone.connect(dest);
+    const echo = a.createDelay(2), fb = a.createGain(), wet = a.createGain();
     echo.delayTime.value = sixteenth * 3;
     fb.gain.value = 0.32; wet.gain.value = 0.26;
-    echo.connect(fb); fb.connect(echo); echo.connect(wet); wet.connect(dest);
+    echo.connect(fb); fb.connect(echo); echo.connect(wet); wet.connect(tone);
     const verb = a.createConvolver(), vw = a.createGain();
     verb.buffer = makeImpulse(a, 2.6); vw.gain.value = 0.3;
-    verb.connect(vw); vw.connect(dest);
-    return { out: dest, echo, verb };
+    verb.connect(vw); vw.connect(tone);
+    const bend = a.createConstantSource();
+    bend.offset.value = 0; bend.start();
+    curBend = bend;
+    return { out: tone, echo, verb, tone, bend, wet: vw };
   }
 
   // Schedules everything that sounds on one 16th-note step of the song.
   // mix = { tier, heat, key, crash }
   function musicStep(a, bus, step, t, six, mix) {
     const bar = Math.floor(step / 16) % 4, s = step % 16, loop = step % 128;
-    const { tier, heat, key } = mix;
+    const { tier, heat, key, stage } = mix;
     const n = (m) => mtof(m + key);
     const lastBar = loop >= 112;
 
     // drums
-    if (mix.crash && s === 0) noiseHit(a, bus.out, t, 1.8, 0.12, 'highpass', 5000).connect(bus.verb);
+    if (mix.crash && s % 4 === 0) noiseHit(a, bus.out, t, 1.8, 0.12, 'highpass', 5000).connect(bus.verb);
     if (s % 4 === 0) drum(a, bus.out, t, 150, 42, 0.26, tier >= 2 ? 0.42 : 0.35);
     if (tier >= 4 && s === 10) drum(a, bus.out, t, 150, 42, 0.22, 0.3);
+    if (stage % 2 === 1 && s === 7) drum(a, bus.out, t, 150, 42, 0.2, 0.26);   // syncopated kick
     if (tier >= 2 && lastBar && s >= 8) {
       // tom fill into the next phrase
       if (s % 2 === 0) drum(a, bus.out, t, 220 - s * 8, 90 - s * 3, 0.22, 0.22).connect(bus.verb);
@@ -531,7 +609,7 @@
 
     // arpeggio sparkle
     if (tier >= 1 || heat > 0.5) {
-      const m = ARP[bar][s % 4] + (tier >= 3 && s % 8 >= 4 ? 12 : 0);
+      const m = ARP[bar][ARP_ORDER[stage % 3][s % 4]] + (tier >= 3 && s % 8 >= 4 ? 12 : 0);
       voice(a, bus.out, t, n(m), six * 0.8, 'square', 0.014 + heat * 0.014, 1500 + heat * 2500).connect(bus.echo);
     }
 
@@ -539,14 +617,58 @@
     const note = step >= 32 && LEAD_AT[loop];
     if (note) {
       const dur = six * note[1] * 0.95;
-      const g = voice(a, bus.out, t, n(note[0]), dur, 'square', 0.05, 2400 + heat * 1200);
+      const [type, cutoff, vol] = LEAD_VOICES[stage % 4];
+      const g = voice(a, bus.out, t, n(note[0]), dur, type, vol, cutoff + heat * 1200);
       g.connect(bus.echo); g.connect(bus.verb);
       if (tier >= 2) voice(a, bus.out, t, n(note[0] + 12), dur, 'sawtooth', 0.018, 3500).connect(bus.echo);
+      if (stage >= FINALE_AT) voice(a, bus.out, t, n(note[0] - 5), dur, 'triangle', 0.035, 3000).connect(bus.verb);
+    }
+
+    // new-planet fanfare: a bright chord stab and an arpeggio racing upward
+    if (mix.fanfare && s === 0) {
+      for (const m of PADS[bar]) swell(a, bus, t, n(m + 12), six * 8, 0.02, 4500);
+      ARP[bar].concat(ARP[bar].map((m) => m + 12)).forEach((m, i) => {
+        voice(a, bus.out, t + i * six * 0.5, n(m), six * 0.9, 'square', 0.03, 5000).connect(bus.echo);
+      });
     }
   }
 
   const music = { gain: null, bus: null, step: 0, next: 0, sixteenth: 0, timer: 0,
-                  tier: 0, key: 0, heat: 0 };
+                  tier: 0, key: 0, stage: 0, heat: 0, rate: null, crashNext: false, slow: false };
+  // Slow motion, musically: the song drops to half speed (a half-time feel
+  // that keeps the beat), every note bends down together like a tape
+  // braking, and the mix goes dark and roomy. When it ends, speed, pitch and
+  // brightness all glide back up over a couple of seconds -- a transition,
+  // not a section -- and a crash marks the song landing back on its feet.
+  const SLOW_RATE = 0.5, SLOW_BEND = -500;   // playback rate, cents
+  const SLOW_IN = 0.45, SLOW_OUT = 1.9;      // seconds
+  // playback rate at audio time t: a straight-line ramp between two values
+  function musicRateAt(t) {
+    const r = music.rate;
+    if (!r) return 1;
+    if (t <= r.t0) return r.from;
+    if (t >= r.t1) return r.to;
+    return r.from + (r.to - r.from) * (t - r.t0) / (r.t1 - r.t0);
+  }
+  function musicSlow(on) {
+    const a = actx;
+    if (!a || !music.timer) return;
+    const t = a.currentTime, b = music.bus;
+    const dur = on ? SLOW_IN : SLOW_OUT;
+    music.slow = on;
+    music.rate = { from: musicRateAt(t), to: on ? SLOW_RATE : 1, t0: t, t1: t + dur };
+    if (!on) music.crashNext = true;
+    const glide = (param, to, exp) => {
+      param.cancelScheduledValues(t);
+      param.setValueAtTime(param.value, t);
+      exp ? param.exponentialRampToValueAtTime(to, t + dur) : param.linearRampToValueAtTime(to, t + dur);
+    };
+    glide(b.bend.offset, on ? SLOW_BEND : 0, false);
+    glide(b.tone.frequency, on ? 1100 : 18000, true);
+    glide(b.wet.gain, on ? 0.6 : 0.3, false);
+    glide(b.echo.delayTime, music.sixteenth * 3 / (on ? SLOW_RATE : 1), false);
+    if (!on) noiseHit(a, b.out, t, dur, 0.05, 'bandpass', 3000);   // riser-ish whoosh
+  }
   function musicTempo() {
     return 15 / (MUSIC_BPM[difficulty] + music.tier * TIER_BPM);
   }
@@ -555,23 +677,32 @@
     if (!a || a.state !== 'running') return;
     if (music.next < a.currentTime) music.next = a.currentTime + 0.02;
     while (music.next < a.currentTime + 0.12) {
-      let crash = false;
-      // tier changes wait for the next 4-bar phrase so they land musically
-      if (music.step % 64 === 0) {
-        const want = musicTierFor(planetStage);
-        if (want !== music.tier) {
-          music.tier = want; music.key = TIER_KEY[want]; crash = true;
-          music.sixteenth = musicTempo();
-          music.bus.echo.delayTime.setTargetAtTime(music.sixteenth * 3, music.next, 0.2);
-        }
+      let crash = false, fanfare = false;
+      // a new planet changes the song on the very next bar, with a crash
+      // and a fanfare, so the reward is heard as well as seen
+      if (music.step % 16 === 0 && planetStage !== music.stage && !music.slow && musicRateAt(music.next) >= 1) {
+        music.stage = planetStage;
+        music.tier = musicTierFor(planetStage);
+        music.key = STAGE_KEY[planetStage % STAGE_KEY.length];
+        crash = true; fanfare = true;
+        music.sixteenth = musicTempo();
+        if (musicRateAt(music.next) >= 1) music.bus.echo.delayTime.setTargetAtTime(music.sixteenth * 3, music.next, 0.2);
       }
-      musicStep(a, music.bus, music.step, music.next, music.sixteenth,
-        { tier: music.tier, heat: music.heat, key: music.key, crash });
-      music.step++; music.next += music.sixteenth;
+      const rate = musicRateAt(music.next);
+      // the speed-up transition is over: land back on the beat with a crash
+      if (music.crashNext && rate >= 1 && music.step % 4 === 0) { crash = true; music.crashNext = false; }
+      musicStep(a, music.bus, music.step, music.next, music.sixteenth / rate,
+        { tier: music.tier, heat: music.heat, key: music.key, stage: music.stage, crash, fanfare });
+      music.step++; music.next += music.sixteenth / rate;
     }
   }
   // How hectic the screen is right now, 0..1. Rises quickly, cools slowly.
+  // true from the moment slow motion starts until the speed-up transition
+  // has fully landed: while it's set the arrangement is frozen, so what
+  // you hear slow down and speed back up is always the same song
+  const musicHeld = () => music.slow || (actx && musicRateAt(actx.currentTime) < 1);
   function musicHeat(dt) {
+    if (musicHeld()) return;
     let threat = Math.min(0.25, elapsed / 400) + (combo - 1) * 0.025;
     for (const d of debris) if (Math.hypot(d.x - cx, d.y - cy) < R_ORBIT * 2.2) threat += 0.06;
     threat += ufos.length * 0.18 + shots.length * 0.12;
@@ -585,7 +716,7 @@
     const g = a.createGain();
     g.gain.value = muted ? 0 : MUSIC_VOL;
     g.connect(a.destination);
-    music.tier = 0; music.key = 0; music.heat = 0;
+    music.tier = 0; music.key = 0; music.stage = 0; music.heat = 0; music.rate = null; music.crashNext = false; music.slow = false;
     music.sixteenth = musicTempo();
     music.gain = g; music.bus = makeBus(a, g, music.sixteenth);
     music.step = 0; music.next = a.currentTime + 0.06;
@@ -595,11 +726,11 @@
   function musicStop(quick) {
     if (!music.timer) return;
     clearInterval(music.timer); music.timer = 0;
-    const g = music.gain, t = actx.currentTime;
+    const g = music.gain, bus = music.bus, t = actx.currentTime;
     g.gain.cancelScheduledValues(t);
     g.gain.setValueAtTime(g.gain.value, t);
     g.gain.linearRampToValueAtTime(0, t + (quick ? 0.05 : 1.4));
-    setTimeout(() => g.disconnect(), 2000);
+    setTimeout(() => { g.disconnect(); try { bus.bend.stop(); } catch (e) {} }, 2000);
   }
   // Silence everything while the app is in the background.
   document.addEventListener('visibilitychange', () => {
@@ -639,6 +770,14 @@
   // average seconds between shield pickups -- more frequent on harder
   // tiers, since there's more to survive and more UFOs to eat a hit from
   const SHIELD_DIFF = { easy: 26, normal: 22, hard: 17, extreme: 13 };
+  // shields stack: each pickup adds a layer (up to SHIELD_MAX) and each hit
+  // peels one off. A short grace window after a hit lets you escape the
+  // cluster that caused it instead of losing every layer at once.
+  const SHIELD_MAX = 3, SHIELD_GRACE = 0.6;
+  // slow motion: an hourglass pickup that slows every hazard (not the ship)
+  // for SLOW_TIME seconds, then eases time back to full speed
+  const SLOW_DIFF = { easy: 32, normal: 28, hard: 24, extreme: 20 };
+  const SLOW_TIME = 3, SLOW_SCALE = 0.4;
 
   // planet progression: the planet visibly transforms through 20 stages the
   // longer you survive -- geological, then crystalline/bioluminescent, then
@@ -736,16 +875,74 @@
   let state = 'menu';        // menu | play | over
   let best = 0;
   try { best = parseInt(localStorage.getItem('orbit.best') || '0', 10) || 0; } catch (e) {}
+  // buffs (planet upgrades) collected this run, and across every run
+  let buffCount = 0, buffsAllTime = 0;
+  try { buffsAllTime = parseInt(localStorage.getItem('orbit.buffs') || '0', 10) || 0; } catch (e) {}
 
   const player = { a: -Math.PI / 2, dir: 1, trail: [] };
   let debris = [], sparks = [], parts = [], floats = [], ufos = [], shots = [];
   let score = 0, combo = 1, elapsed = 0, nextDebris = 0, nextSpark = 0, nextUFO = 0, nextShield = 0;
   let sparkCount = 0, nearCount = 0;
   let shake = 0, flash = 0, readyAt = 0, deathAt = -99;
-  let shieldPickup = null, shieldActive = false;
+  let shieldPickup = null, shields = 0, graceT = 0, shieldHitT = 0;
+  let slowPickup = null, nextSlow = 0, slowT = 0, timeScale = 1, slowVis = 0;
   let planetStage = 0;
 
   const SPEED = 2.15;        // rad/s
+
+  /* ---------- planet rewards ---------- */
+  // Every new planet pays out: a shockwave from the planet sweeps the screen
+  // clear, time dips for a beat, the soundtrack changes, and you're handed a
+  // random upgrade from a weighted pool (commons often, rares seldom). Each
+  // upgrade is one per run (Hull Patch aside, which can repeat) and aimed at
+  // what the rising difficulty throws next -- helpful, never run-carrying.
+  const ITEMS = [
+    { id: 'patch',  name: 'HULL PATCH',     rarity: 0, weight: 30, repeat: true, desc: '+1 SHIELD LAYER' },
+    { id: 'magnet', name: 'SPARK MAGNET',   rarity: 0, weight: 24, desc: 'GRAB PICKUPS FROM FURTHER AWAY' },
+    { id: 'nerves', name: 'STEADY NERVES',  rarity: 0, weight: 22, desc: 'LONGER ESCAPE WINDOW AFTER A HIT' },
+    { id: 'damper', name: 'DAMPENER FIELD', rarity: 1, weight: 15, desc: 'NEW DEBRIS AND SHOTS 12% SLOWER' },
+    { id: 'chrono', name: 'CHRONO CORE',    rarity: 1, weight: 15, desc: 'SLOW-MO LASTS 5S, SHOWS UP MORE' },
+    { id: 'jammer', name: 'SIGNAL JAMMER',  rarity: 1, weight: 14, desc: 'UFOS AIM SLOWER AND FIRE LESS' },
+    { id: 'echo',   name: 'ECHO SHIELD',    rarity: 1, weight: 12, desc: '10 NEAR MISSES RESTORE A SHIELD' },
+    { id: 'moon',   name: 'GUARDIAN MOON',  rarity: 2, weight: 7,  desc: 'A MOON CIRCLES YOU, SMASHING DEBRIS' },
+    { id: 'nova',   name: 'NOVA PULSE',     rarity: 2, weight: 7,  desc: 'EVERY 30S A SHOCKWAVE CLEARS SPACE' },
+    { id: 'last',   name: 'LAST STAND',     rarity: 2, weight: 6,  desc: 'SURVIVE ONE FATAL HIT, SHIELDLESS' },
+  ];
+  const RARITY = [
+    { label: 'COMMON',   color: '#A8CBE6' },
+    { label: 'UNCOMMON', color: '#6FE3FF' },
+    { label: 'RARE',     color: '#FFD24C' },
+  ];
+  const NOVA_EVERY = 30, MOON_COOLDOWN = 5;
+  let owned = {}, novas = [], reward = null, hitStopT = 0;
+  let moon = null, echoCount = 0, novaT = 0, lastStandUsed = false;
+  const has = (id) => !!owned[id];
+  function rollItem() {
+    const pool = ITEMS.filter((it) => it.repeat || !owned[it.id]);
+    let r = Math.random() * pool.reduce((sum, it) => sum + it.weight, 0);
+    for (const it of pool) { r -= it.weight; if (r <= 0) return it; }
+    return pool[0];
+  }
+  function grantItem(it) {
+    owned[it.id] = (owned[it.id] || 0) + 1;
+    buffCount++; buffsAllTime++;
+    try { localStorage.setItem('orbit.buffs', String(buffsAllTime)); } catch (e) {}
+    el.buffsV.textContent = buffCount;
+    el.buffs.classList.remove('pop'); void el.buffs.offsetWidth; el.buffs.classList.add('pop');
+    if (it.id === 'patch') shields = Math.min(SHIELD_MAX, shields + 1);
+    if (it.id === 'moon') moon = { a: 0, cd: 0, x: 0, y: 0 };
+    if (it.id === 'nova') novaT = NOVA_EVERY;
+    renderItems();
+  }
+  function renderItems() {
+    el.items.innerHTML = ITEMS.filter((it) => owned[it.id]).map((it) => {
+      const n = owned[it.id], used = it.id === 'last' && lastStandUsed;
+      return '<span class="chip' + (used ? ' used' : '') + '" style="color:' + RARITY[it.rarity].color + '">' +
+        it.name + (n > 1 ? ' x' + n : '') + '</span>';
+    }).join('');
+  }
+  const pickR = () => SHIP + 15 * u * (has('magnet') ? 1.8 : 1);
+  const ufoChargeTime = () => UFO_DIFF[difficulty].chargeTime * (has('jammer') ? 1.5 : 1);
 
   function reset(menu) {
     player.a = -Math.PI / 2; player.dir = 1; player.trail.length = 0;
@@ -754,7 +951,13 @@
     nextDebris = menu ? 1.2 : DIFF[difficulty].initialDelay; nextSpark = 2.2;
     nextUFO = UFO_DIFF[difficulty].spawnEvery[0] * 0.6;
     nextShield = 5 + Math.random() * 5;
-    shieldPickup = null; shieldActive = false;
+    shieldPickup = null; shields = 0; graceT = 0; shieldHitT = 0;
+    slowPickup = null; slowT = 0; timeScale = 1; slowVis = 0;
+    owned = {}; novas = []; reward = null; hitStopT = 0;
+    moon = null; echoCount = 0; novaT = 0; lastStandUsed = false;
+    buffCount = 0; el.buffsV.textContent = '0';
+    renderItems();
+    nextSlow = SLOW_DIFF[difficulty] * (0.6 + Math.random() * 0.4);
     planetStage = 0;
     shake = 0; flash = 0;
   }
@@ -771,6 +974,7 @@
 
   function die() {
     state = 'over';
+    slowT = 0; hitStopT = 0;
     deathAt = performance.now();
     readyAt = deathAt + 700;
     shake = REDUCE ? 0 : 26 * u;
@@ -788,6 +992,8 @@
     el.stBest.textContent = best.toLocaleString();
     el.stMode.textContent = DIFF[difficulty].label;
     el.stPlanet.textContent = PLANET_STAGES[planetStage].label;
+    el.stBuffs.textContent = buffCount;
+    el.stBuffsAll.textContent = buffsAllTime.toLocaleString();
     el.titleBest.textContent = best.toLocaleString();
     el.overlay.scrollTop = 0;
     el.over.classList.remove('hidden');
@@ -836,7 +1042,7 @@
   function spawnDebris(harmless) {
     const a = Math.random() * Math.PI * 2;
     const d0 = DIFF[difficulty];
-    const speed = (harmless ? 70 : Math.min(d0.speedCap, d0.speedBase + elapsed * d0.speedRamp)) * u;
+    const speed = (harmless ? 70 : Math.min(d0.speedCap, d0.speedBase + elapsed * d0.speedRamp) * (has('damper') ? 0.88 : 1)) * u;
     const r = (8 + Math.random() * 7) * u;
     const verts = [];
     const n = 6 + Math.floor(Math.random() * 3);
@@ -864,13 +1070,35 @@
       lifespan: uc.lifespan,
     });
   }
-  // shield absorbs one lethal hit: the offending hazard is destroyed and
-  // the player survives, instead of dying
+  // What a lethal touch does: nothing during the post-hit grace window,
+  // peel off a shield layer if there is one, otherwise end the run.
+  // Returns 'grace', 'absorbed' or 'dead'.
+  function takeHit(x, y) {
+    if (graceT > 0) return 'grace';
+    if (shields > 0) { shieldAbsorb(x, y); return 'absorbed'; }
+    if (has('last') && !lastStandUsed) {
+      // the save: clear the screen, slow time, and get a moment to breathe
+      lastStandUsed = true;
+      renderItems();
+      graceT = 1.6;
+      flash = 1;
+      novas.push({ r: R_PLANET, maxR: spawnR + 60, full: true, color: '#FFD24C' });
+      float(px(), py() - 22 * u, 'LAST STAND', '#FFD24C');
+      sfx.nova();
+      if (slowT <= 0) { slowT = has('chrono') ? 5 : SLOW_TIME; sfx.slowIn(); musicSlow(true); }
+      return 'absorbed';
+    }
+    die();
+    return 'dead';
+  }
   function shieldAbsorb(x, y) {
-    shieldActive = false;
+    shields--;
+    graceT = has('nerves') ? 1.4 : SHIELD_GRACE;
+    shieldHitT = 0.6;
     shake = Math.max(shake, REDUCE ? 0 : 10 * u);
     burst(x, y, REDUCE ? 10 : 26, '#6FE3FF', 200 * u);
-    float(px(), py() - 22 * u, 'SHIELD', '#6FE3FF');
+    burst(px(), py(), REDUCE ? 8 : 20, '#FF4D5E', 160 * u);
+    float(px(), py() - 22 * u, shields ? 'SHIELD -1' : 'SHIELD DOWN', '#FF4D5E');
     sfx.shieldBreak();
   }
 
@@ -895,13 +1123,29 @@
     spawnR = Math.hypot(Math.max(cx, W - cx), Math.max(cy, H - cy)) + 45;
   }
 
-  function update(dt) {
-    recentre(dt);
+  // rdt is real time. Everything in the world (hazards, pickups, spawn
+  // timers, particles) runs on dt, which slow motion scales down; the ship,
+  // the score and survival time always run in real time.
+  function update(rdt) {
+    recentre(rdt);
     const playing = state === 'play';
-    if (playing) { elapsed += dt; score += dt * 8; }
-    if (playing && music.timer) musicHeat(dt);
+    if (playing && slowT > 0) {
+      slowT -= rdt;
+      if (slowT <= 0) { slowT = 0; sfx.slowOut(); musicSlow(false); }
+    }
+    hitStopT = Math.max(0, hitStopT - rdt);
+    // a new planet freezes the action for a beat (a "hit stop"), on top of slow-mo
+    const targetScale = Math.min(slowT > 0 ? SLOW_SCALE : 1, hitStopT > 0 ? 0.2 : 1);
+    // snap into slow motion, ease back out of it over about a second
+    timeScale += (targetScale - timeScale) * Math.min(1, rdt * (targetScale < timeScale ? 9 : 2.5));
+    const dt = rdt * timeScale;
+    slowVis += ((slowT > 0 ? 1 : 0) - slowVis) * Math.min(1, rdt * (slowT > 0 ? 9 : 2.5));
+    graceT = Math.max(0, graceT - rdt);
+    shieldHitT = Math.max(0, shieldHitT - rdt);
+    if (playing) { elapsed += rdt; score += rdt * 8; }
+    if (playing && music.timer) musicHeat(rdt);
 
-    player.a += SPEED * player.dir * dt;
+    player.a += SPEED * player.dir * rdt;
     const ppx = px(), ppy = py();
     player.trail.push({ x: ppx, y: ppy });
     if (player.trail.length > 26) player.trail.shift();
@@ -945,15 +1189,20 @@
       if (playing) {
         const gap = Math.hypot(d.x - ppx, d.y - ppy);
         if (gap < d.r + SHIP) {
-          if (shieldActive) {
-            shieldAbsorb(d.x, d.y);
-            debris.splice(i, 1);
-            continue;
-          }
-          die(); return;
+          const res = takeHit(d.x, d.y);
+          if (res === 'dead') return;
+          if (res === 'absorbed') { debris.splice(i, 1); continue; }
         }
         if (!d.near && gap < d.r + SHIP + 26 * u) {
           d.near = true; nearCount++; score += 5;
+          if (has('echo') && ++echoCount >= 10) {
+            echoCount = 0;
+            if (shields < SHIELD_MAX) {
+              shields++;
+              float(ppx, ppy - 40 * u, 'ECHO +1', '#6FE3FF');
+              sfx.shieldGet();
+            }
+          }
           shake = Math.max(shake, REDUCE ? 0 : 4 * u);
           float(ppx, ppy - 22 * u, '+5', '#A8CBE6');
           sfx.near();
@@ -989,16 +1238,16 @@
         const uc = UFO_DIFF[difficulty];
         if (uu.charging) {
           uu.chargeT += dt;
-          if (uu.chargeT >= uc.chargeTime) {
+          if (uu.chargeT >= ufoChargeTime()) {
             const ang = Math.atan2(ppy - uu.y, ppx - uu.x);
             shots.push({
               x: uu.x, y: uu.y,
-              vx: Math.cos(ang) * uc.shotSpeed * u,
-              vy: Math.sin(ang) * uc.shotSpeed * u,
+              vx: Math.cos(ang) * uc.shotSpeed * u * (has('damper') ? 0.88 : 1),
+              vy: Math.sin(ang) * uc.shotSpeed * u * (has('damper') ? 0.88 : 1),
             });
             sfx.ufoFire();
             uu.charging = false;
-            uu.fireTimer = uc.fireEvery[0] + Math.random() * (uc.fireEvery[1] - uc.fireEvery[0]);
+            uu.fireTimer = (uc.fireEvery[0] + Math.random() * (uc.fireEvery[1] - uc.fireEvery[0])) * (has('jammer') ? 1.4 : 1);
           }
         } else {
           uu.fireTimer -= dt;
@@ -1007,12 +1256,9 @@
 
         const gapU = Math.hypot(uu.x - ppx, uu.y - ppy);
         if (gapU < uu.r + SHIP) {
-          if (shieldActive) {
-            shieldAbsorb(uu.x, uu.y);
-            ufos.splice(i, 1);
-            continue;
-          }
-          die(); return;
+          const res = takeHit(uu.x, uu.y);
+          if (res === 'dead') return;
+          if (res === 'absorbed') { ufos.splice(i, 1); continue; }
         }
       }
     }
@@ -1025,29 +1271,29 @@
       if (playing) {
         const gap = Math.hypot(s.x - ppx, s.y - ppy);
         if (gap < SHIP + 4 * u) {
-          if (shieldActive) {
-            shieldAbsorb(s.x, s.y);
-            shots.splice(i, 1);
-            continue;
-          }
-          die(); return;
+          const res = takeHit(s.x, s.y);
+          if (res === 'dead') return;
+          if (res === 'absorbed') { shots.splice(i, 1); continue; }
         }
       }
     }
 
     // shield pickup: spawns on a timer, collected like a spark
     if (playing) {
-      nextShield -= dt;
-      if (nextShield <= 0 && !shieldPickup && !shieldActive) {
+      // the countdown only runs while there's room for another layer, so
+      // losing a layer never makes a replacement appear instantly
+      if (shields < SHIELD_MAX) nextShield -= dt;
+      if (nextShield <= 0 && !shieldPickup && shields < SHIELD_MAX) {
         shieldPickup = { a: Math.random() * Math.PI * 2, life: 8 };
         nextShield = SHIELD_DIFF[difficulty] * (0.7 + Math.random() * 0.6);
       }
       if (shieldPickup) {
         shieldPickup.life -= dt;
         const sx = cx + Math.cos(shieldPickup.a) * R_ORBIT, sy = cy + Math.sin(shieldPickup.a) * R_ORBIT;
-        if (Math.hypot(sx - ppx, sy - ppy) < SHIP + 15 * u) {
-          shieldActive = true;
-          float(sx, sy - 20 * u, 'SHIELD', '#6FE3FF');
+        if (Math.hypot(sx - ppx, sy - ppy) < pickR()) {
+          // a Hull Patch or Echo Shield can top you up while this pickup is out
+          shields = Math.min(SHIELD_MAX, shields + 1);
+          float(sx, sy - 20 * u, shields > 1 ? 'SHIELD x' + shields : 'SHIELD', '#6FE3FF');
           burst(sx, sy, 14, '#6FE3FF', 140 * u);
           sfx.shieldGet();
           shieldPickup = null;
@@ -1057,12 +1303,35 @@
       }
     }
 
+    // slow-motion pickup: spawns on its own timer, collected like a spark
+    if (playing) {
+      if (slowT <= 0) nextSlow -= dt;
+      if (nextSlow <= 0 && !slowPickup && slowT <= 0) {
+        slowPickup = { a: Math.random() * Math.PI * 2, life: 8 };
+        nextSlow = SLOW_DIFF[difficulty] * (0.7 + Math.random() * 0.6) * (has('chrono') ? 0.7 : 1);
+      }
+      if (slowPickup) {
+        slowPickup.life -= dt;
+        const sx = cx + Math.cos(slowPickup.a) * R_ORBIT, sy = cy + Math.sin(slowPickup.a) * R_ORBIT;
+        if (Math.hypot(sx - ppx, sy - ppy) < pickR()) {
+          slowT = has('chrono') ? 5 : SLOW_TIME;
+          float(sx, sy - 20 * u, 'SLOW-MO', '#B79CFF');
+          burst(sx, sy, 16, '#B79CFF', 150 * u);
+          sfx.slowIn();
+          musicSlow(true);
+          slowPickup = null;
+        } else if (slowPickup.life <= 0) {
+          slowPickup = null;
+        }
+      }
+    }
+
     // sparks
     for (let i = sparks.length - 1; i >= 0; i--) {
       const s = sparks[i];
       s.t += dt; s.life -= dt;
       const sx = cx + Math.cos(s.a) * R_ORBIT, sy = cy + Math.sin(s.a) * R_ORBIT;
-      if (playing && Math.hypot(sx - ppx, sy - ppy) < SHIP + 15 * u) {
+      if (playing && Math.hypot(sx - ppx, sy - ppy) < pickR()) {
         const gain = 10 * combo;
         score += gain; sparkCount++;
         combo = Math.min(9, combo + 1);
@@ -1098,22 +1367,84 @@
       if (newStage > planetStage) {
         planetStage = newStage;
         const ps = PLANET_STAGES[planetStage];
-        burst(cx, cy, REDUCE ? 10 : 28, ps.core, 160 * u);
-        float(cx, cy - R_PLANET - 30 * u, ps.label, ps.core);
-        shake = Math.max(shake, REDUCE ? 0 : 6 * u);
-        sfx.stageUp();
+        burst(cx, cy, REDUCE ? 14 : 60, ps.core, 260 * u);
+        burst(cx, cy, REDUCE ? 8 : 30, '#FFFFFF', 180 * u);
+        shake = Math.max(shake, REDUCE ? 0 : 9 * u);
+        novas.push({ r: R_PLANET, maxR: spawnR + 60, full: true, color: ps.core });
+        hitStopT = 0.5;
+        graceT = Math.max(graceT, 1.2);
+        const it = rollItem();
+        grantItem(it);
+        reward = { t: 0, ps, it };
+        sfx.reward(it.rarity);
       }
     }
 
-    shake *= Math.pow(0.0025, dt);
-    flash *= Math.pow(0.0008, dt);
+    // shockwaves: sweep outward from the planet, erasing hazards they pass
+    for (let n = novas.length - 1; n >= 0; n--) {
+      const nv = novas[n];
+      nv.r += 1500 * u * rdt;
+      const inside = (o) => Math.hypot(o.x - cx, o.y - cy) < nv.r;
+      for (let i = debris.length - 1; i >= 0; i--) {
+        if (!inside(debris[i])) continue;
+        burst(debris[i].x, debris[i].y, REDUCE ? 2 : 6, '#A8CBE6', 90 * u);
+        debris.splice(i, 1);
+      }
+      for (let i = shots.length - 1; i >= 0; i--) if (inside(shots[i])) shots.splice(i, 1);
+      if (nv.full) {
+        for (let i = ufos.length - 1; i >= 0; i--) {
+          if (!inside(ufos[i])) continue;
+          burst(ufos[i].x, ufos[i].y, REDUCE ? 6 : 18, '#7CFFC2', 140 * u);
+          ufos.splice(i, 1);
+        }
+      }
+      if (nv.r > nv.maxR) novas.splice(n, 1);
+    }
+    if (reward) { reward.t += rdt; if (reward.t > 3.6) reward = null; }
+
+    if (playing && has('nova')) {
+      novaT -= dt;
+      if (novaT <= 0) {
+        novaT = NOVA_EVERY;
+        novas.push({ r: R_PLANET, maxR: R_ORBIT * 1.9, full: false, color: '#FFD24C' });
+        sfx.nova();
+      }
+    }
+    // guardian moon: circles the ship and smashes the first debris it
+    // touches, then needs a few seconds to recharge
+    if (moon) {
+      moon.a += 3.2 * rdt;
+      moon.cd = Math.max(0, moon.cd - dt);
+      moon.x = ppx + Math.cos(moon.a) * SHIP * 4.2;
+      moon.y = ppy + Math.sin(moon.a) * SHIP * 4.2;
+      if (playing && moon.cd <= 0) {
+        for (let i = debris.length - 1; i >= 0; i--) {
+          const d = debris[i];
+          if (Math.hypot(d.x - moon.x, d.y - moon.y) < d.r + 6 * u) {
+            burst(d.x, d.y, REDUCE ? 4 : 14, '#E8EBFF', 120 * u);
+            debris.splice(i, 1);
+            moon.cd = MOON_COOLDOWN;
+            sfx.moonHit();
+            break;
+          }
+        }
+      }
+    }
+
+    shake *= Math.pow(0.0025, rdt);
+    flash *= Math.pow(0.0008, rdt);
 
     // hud
     el.score.textContent = Math.floor(score).toLocaleString();
     el.best.textContent = Math.max(best, Math.floor(score)).toLocaleString();
     el.comboV.textContent = 'x' + combo;
     el.combo.classList.toggle('on', playing && combo > 1);
-    el.shieldBadge.classList.toggle('on', playing && shieldActive);
+    el.shieldBadge.classList.toggle('on', playing && (shields > 0 || shieldHitT > 0));
+    el.shieldBadge.classList.toggle('hit', shieldHitT > 0);
+    el.shieldV.textContent = '●'.repeat(shields) + '○'.repeat(SHIELD_MAX - shields);
+    el.slowBadge.classList.toggle('on', playing && slowT > 0);
+    el.slowV.textContent = slowT.toFixed(1);
+    el.items.style.display = state === 'play' ? '' : 'none';
   }
 
   /* ---------- draw ---------- */
@@ -1293,6 +1624,21 @@
       ctx.restore();
     }
 
+    // slow-motion pickup: a violet hourglass
+    if (slowPickup) {
+      const sx = cx + Math.cos(slowPickup.a) * R_ORBIT, sy = cy + Math.sin(slowPickup.a) * R_ORBIT;
+      const pulse = 0.6 + 0.4 * Math.sin(t * 5);
+      const k = (6 + pulse * 1.2) * u;
+      ctx.save();
+      ctx.shadowColor = '#B79CFF'; ctx.shadowBlur = 14 * u * pulse;
+      ctx.strokeStyle = '#B79CFF'; ctx.lineWidth = 2 * u;
+      ctx.beginPath();
+      ctx.moveTo(sx - k * 0.8, sy - k); ctx.lineTo(sx + k * 0.8, sy - k);
+      ctx.lineTo(sx - k * 0.8, sy + k); ctx.lineTo(sx + k * 0.8, sy + k);
+      ctx.closePath(); ctx.stroke();
+      ctx.restore();
+    }
+
     // debris
     for (const d of debris) {
       const len = Math.hypot(d.vx, d.vy);
@@ -1352,7 +1698,7 @@
       ctx.globalAlpha = 1;
 
       if (uu.charging) {
-        const k = Math.min(1, uu.chargeT / (UFO_DIFF[difficulty].chargeTime || 0.5));
+        const k = Math.min(1, uu.chargeT / (ufoChargeTime() || 0.5));
         ctx.shadowColor = '#FFE2B0'; ctx.shadowBlur = 18 * u * k;
         ctx.beginPath(); ctx.arc(0, ry * 0.5, 2.4 * u * (0.4 + k * 0.6), 0, 6.2832);
         ctx.fillStyle = '#FFE2B0';
@@ -1395,10 +1741,22 @@
       const ppx = px(), ppy = py();
       ctx.save();
       ctx.translate(ppx, ppy);
-      if (shieldActive) {
+      // one ring per shield layer; blink during the post-hit grace window
+      if (shields > 0 && !(graceT > 0 && Math.floor(t * 16) % 2)) {
         ctx.strokeStyle = 'rgba(111,227,255,' + (0.55 + 0.25 * Math.sin(t * 5)).toFixed(2) + ')';
         ctx.lineWidth = 1.6 * u;
-        ctx.beginPath(); ctx.arc(0, 0, SHIP * 2.2, 0, 6.2832); ctx.stroke();
+        for (let k = 0; k < shields; k++) {
+          ctx.beginPath(); ctx.arc(0, 0, SHIP * (2.2 + k * 0.55), 0, 6.2832); ctx.stroke();
+        }
+      }
+      // a shattering red ring the moment a layer breaks
+      if (shieldHitT > 0) {
+        const f = shieldHitT / 0.6;
+        ctx.strokeStyle = 'rgba(255,77,94,' + f.toFixed(2) + ')';
+        ctx.lineWidth = 2 * u;
+        ctx.setLineDash([4 * u, 5 * u]);
+        ctx.beginPath(); ctx.arc(0, 0, SHIP * (2.2 + (1 - f) * 2.5), 0, 6.2832); ctx.stroke();
+        ctx.setLineDash([]);
       }
       ctx.rotate(player.a + player.dir * Math.PI / 2);
       ctx.shadowColor = '#FF9A3C'; ctx.shadowBlur = 16 * u;
@@ -1423,6 +1781,26 @@
     }
     ctx.globalAlpha = 1;
 
+    // shockwave rings
+    for (const nv of novas) {
+      const f = 1 - nv.r / nv.maxR;
+      ctx.strokeStyle = nv.color;
+      ctx.globalAlpha = Math.max(0, f) * 0.8;
+      ctx.lineWidth = (3 + f * 6) * u;
+      ctx.beginPath(); ctx.arc(cx, cy, nv.r, 0, 6.2832); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    // guardian moon (dim while recharging)
+    if (moon && state === 'play') {
+      ctx.save();
+      ctx.globalAlpha = moon.cd > 0 ? 0.35 : 1;
+      ctx.shadowColor = '#E8EBFF'; ctx.shadowBlur = moon.cd > 0 ? 0 : 10 * u;
+      ctx.fillStyle = '#E8EBFF';
+      ctx.beginPath(); ctx.arc(moon.x, moon.y, 4 * u, 0, 6.2832); ctx.fill();
+      ctx.restore();
+    }
+
     // floating scores
     ctx.textAlign = 'center';
     ctx.font = 500 + ' ' + Math.round(13 * u) + 'px "IBM Plex Mono", monospace';
@@ -1434,6 +1812,50 @@
     ctx.globalAlpha = 1;
 
     // impact flash
+    // new-planet banner: planet name above the orbit, the upgrade below it
+    if (reward) {
+      const rt = reward.t;
+      const alpha = Math.min(1, rt / 0.2) * Math.min(1, (3.6 - rt) / 0.6);
+      const pop = 1 + 0.25 * Math.max(0, 1 - rt / 0.25);
+      const rar = RARITY[reward.it.rarity];
+      const top = cy - R_ORBIT - 34 * u, bottom = cy + R_ORBIT + 46 * u;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, alpha);
+      ctx.textAlign = 'center';
+      ctx.font = '500 ' + Math.max(10, Math.round(11 * u)) + 'px "IBM Plex Mono", monospace';
+      ctx.fillStyle = '#7C8DAE';
+      ctx.fillText('NEW WORLD  ' + (planetStage + 1) + ' / ' + PLANET_STAGES.length, cx, top - 44 * u);
+      ctx.save();
+      ctx.translate(cx, top); ctx.scale(pop, pop);
+      ctx.shadowColor = reward.ps.core; ctx.shadowBlur = 18 * u;
+      ctx.fillStyle = reward.ps.core;
+      ctx.font = '700 ' + Math.max(22, Math.round(40 * u)) + 'px Oxanium, "Trebuchet MS", sans-serif';
+      ctx.fillText(reward.ps.label, 0, 0);
+      ctx.restore();
+      // the upgrade card fades in a beat after the planet name
+      ctx.globalAlpha = Math.max(0, alpha * Math.min(1, (rt - 0.35) / 0.25));
+      ctx.font = '500 ' + Math.max(9, Math.round(10 * u)) + 'px "IBM Plex Mono", monospace';
+      ctx.fillStyle = rar.color;
+      ctx.fillText(rar.label + ' UPGRADE', cx, bottom);
+      ctx.shadowColor = rar.color; ctx.shadowBlur = reward.it.rarity === 2 ? 16 * u : 6 * u;
+      ctx.font = '700 ' + Math.max(16, Math.round(24 * u)) + 'px Oxanium, "Trebuchet MS", sans-serif';
+      ctx.fillText(reward.it.name, cx, bottom + 26 * u);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#A8CBE6';
+      ctx.font = '400 ' + Math.max(9, Math.round(11 * u)) + 'px "IBM Plex Mono", monospace';
+      ctx.fillText(reward.it.desc, cx, bottom + 46 * u);
+      ctx.restore();
+    }
+
+    // slow motion: a violet wash with darker edges, fading with the time scale
+    const slowK = slowVis;
+    if (slowK > 0.01) {
+      const g = ctx.createRadialGradient(cx, cy, R_ORBIT * 0.8, cx, cy, Math.hypot(W, H) * 0.6);
+      g.addColorStop(0, 'rgba(120,90,255,' + (slowK * 0.06).toFixed(3) + ')');
+      g.addColorStop(1, 'rgba(60,30,140,' + (slowK * 0.35).toFixed(3) + ')');
+      ctx.fillStyle = g;
+      ctx.fillRect(-40, -40, W + 80, H + 80);
+    }
     if (flash > 0.01) {
       ctx.fillStyle = 'rgba(255,77,94,' + (flash * 0.32).toFixed(3) + ')';
       ctx.fillRect(-40, -40, W + 80, H + 80);
