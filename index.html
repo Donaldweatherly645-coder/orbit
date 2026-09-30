@@ -59,7 +59,7 @@
     font-family:var(--mono); font-size:11px; letter-spacing:.14em;
   }
   .read{display:flex; flex-direction:column; gap:3px}
-  .read .k{color:var(--slate); font-size:9px; letter-spacing:.24em}
+  .read .k{color:var(--slate); font-size:9px; letter-spacing:.24em; white-space:nowrap}
   .read .v{
     font-size:22px; line-height:1; color:var(--ice);
     font-variant-numeric:tabular-nums; font-weight:500;
@@ -70,7 +70,11 @@
   #combo .v{color:var(--sodium)}
   #shieldBadge{opacity:0; transition:opacity .18s}
   #shieldBadge.on{opacity:1}
-  #shieldBadge .v{color:#6FE3FF}
+  #shieldBadge .v{color:#6FE3FF; letter-spacing:.12em}
+  #shieldBadge.hit .v{color:var(--danger)}
+  #slowBadge{opacity:0; transition:opacity .18s}
+  #slowBadge.on{opacity:1}
+  #slowBadge .v{color:#B79CFF}
   #mute{
     pointer-events:auto; margin-left:14px; align-self:center;
     background:transparent; border:1px solid var(--line); color:var(--slate);
@@ -204,6 +208,7 @@
     <div class="read" id="score"><span class="k">SCORE</span><span class="v">0</span></div>
     <div class="read" id="best"><span class="k">BEST</span><span class="v">0</span></div>
     <div class="read" id="shieldBadge"><span class="k">SHIELD</span><span class="v">●</span></div>
+    <div class="read" id="slowBadge"><span class="k">SLOW-MO</span><span class="v">3.0</span></div>
     <div class="read" id="combo"><span class="k">CHAIN</span><span class="v">x1</span></div>
     <button id="mute" type="button" aria-pressed="false">SOUND ON</button>
   </div>
@@ -213,7 +218,7 @@
       <p class="eyebrow">SINGLE-BUTTON ARCADE</p>
       <h1>ORBIT</h1>
       <div class="rule"></div>
-      <p class="blurb">Debris is falling toward the planet. You can only do one thing about it: reverse your orbit. Grab sparks to chain a multiplier and shields to survive a hit -- alien saucers will be shooting at you too.</p>
+      <p class="blurb">Debris is falling toward the planet. You can only do one thing about it: reverse your orbit. Grab sparks to chain a multiplier, stack up to three shields to survive hits, and catch an hourglass to slow time -- alien saucers will be shooting at you too.</p>
       <p class="bestLine">BEST <span id="titleBest">0</span></p>
       <p class="diffLabel">DIFFICULTY</p>
       <div class="diffs" role="group" aria-label="Difficulty" data-diffs>
@@ -277,6 +282,9 @@
     titleBest: document.getElementById('titleBest'),
     overlay: document.getElementById('overlay'),
     shieldBadge: document.getElementById('shieldBadge'),
+    shieldV: document.querySelector('#shieldBadge .v'),
+    slowBadge: document.getElementById('slowBadge'),
+    slowV: document.querySelector('#slowBadge .v'),
   };
 
   /* ---------- geometry ---------- */
@@ -363,6 +371,8 @@
     ufoFire:     () => tone(520, 170, 0.16, 'sawtooth', 0.07),
     shieldGet:   () => tone(500, 900, 0.16, 'triangle', 0.08),
     shieldBreak: () => { tone(700, 200, 0.18, 'square', 0.09); hiss(0.15, 0.06); },
+    slowIn:      () => { tone(520, 90, 0.5, 'sine', 0.09); hiss(0.35, 0.05); },
+    slowOut:     () => tone(140, 700, 0.9, 'triangle', 0.05),
     stageUp:     () => tone(320, 900, 0.35, 'sine', 0.09),
   };
   /* ---------- music ---------- */
@@ -407,6 +417,9 @@
   const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
   let noiseBuf = null;
+  // Shared pitch-bend source (cents) wired into every oscillator's detune, so
+  // slow motion can bend every sounding note at once, like a tape slowing.
+  let curBend = null;
   function noiseHit(a, dest, t, dur, vol, type, freq) {
     if (!noiseBuf || noiseBuf.sampleRate !== a.sampleRate) {
       noiseBuf = a.createBuffer(1, a.sampleRate * 2, a.sampleRate);
@@ -425,6 +438,7 @@
   function voice(a, dest, t, freq, dur, type, vol, cutoff, attack) {
     const o = a.createOscillator(), f = a.createBiquadFilter(), g = a.createGain();
     o.type = type; o.frequency.setValueAtTime(freq, t);
+    if (curBend) curBend.connect(o.detune);
     f.type = 'lowpass'; f.frequency.value = cutoff;
     g.gain.setValueAtTime(0.0001, t);
     g.gain.linearRampToValueAtTime(vol, t + (attack || 0.008));
@@ -444,6 +458,7 @@
     for (const det of [-14, 0, 14]) {
       const o = a.createOscillator();
       o.type = 'sawtooth'; o.frequency.value = freq; o.detune.value = det;
+      if (curBend) curBend.connect(o.detune);
       o.connect(f); o.start(t); o.stop(t + dur + 0.05);
     }
     f.connect(g); g.connect(bus.out); g.connect(bus.verb);
@@ -452,6 +467,7 @@
     const o = a.createOscillator(), g = a.createGain();
     o.frequency.setValueAtTime(f1, t);
     o.frequency.exponentialRampToValueAtTime(f2, t + dur * 0.5);
+    if (curBend) curBend.connect(o.detune);
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     o.connect(g); g.connect(dest);
@@ -470,16 +486,24 @@
     }
     return buf;
   }
-  // Mixer: a dry path plus an echo (for the lead) and a big reverb.
+  // Mixer: a dry path plus an echo (for the lead) and a big reverb, all
+  // through a master low-pass ("tone") that slow motion closes down, plus
+  // the shared pitch bend.
   function makeBus(a, dest, sixteenth) {
-    const echo = a.createDelay(1), fb = a.createGain(), wet = a.createGain();
+    const tone = a.createBiquadFilter();
+    tone.type = 'lowpass'; tone.frequency.value = 18000; tone.Q.value = 0.7;
+    tone.connect(dest);
+    const echo = a.createDelay(2), fb = a.createGain(), wet = a.createGain();
     echo.delayTime.value = sixteenth * 3;
     fb.gain.value = 0.32; wet.gain.value = 0.26;
-    echo.connect(fb); fb.connect(echo); echo.connect(wet); wet.connect(dest);
+    echo.connect(fb); fb.connect(echo); echo.connect(wet); wet.connect(tone);
     const verb = a.createConvolver(), vw = a.createGain();
     verb.buffer = makeImpulse(a, 2.6); vw.gain.value = 0.3;
-    verb.connect(vw); vw.connect(dest);
-    return { out: dest, echo, verb };
+    verb.connect(vw); vw.connect(tone);
+    const bend = a.createConstantSource();
+    bend.offset.value = 0; bend.start();
+    curBend = bend;
+    return { out: tone, echo, verb, tone, bend, wet: vw };
   }
 
   // Schedules everything that sounds on one 16th-note step of the song.
@@ -491,7 +515,7 @@
     const lastBar = loop >= 112;
 
     // drums
-    if (mix.crash && s === 0) noiseHit(a, bus.out, t, 1.8, 0.12, 'highpass', 5000).connect(bus.verb);
+    if (mix.crash && s % 4 === 0) noiseHit(a, bus.out, t, 1.8, 0.12, 'highpass', 5000).connect(bus.verb);
     if (s % 4 === 0) drum(a, bus.out, t, 150, 42, 0.26, tier >= 2 ? 0.42 : 0.35);
     if (tier >= 4 && s === 10) drum(a, bus.out, t, 150, 42, 0.22, 0.3);
     if (tier >= 2 && lastBar && s >= 8) {
@@ -546,7 +570,40 @@
   }
 
   const music = { gain: null, bus: null, step: 0, next: 0, sixteenth: 0, timer: 0,
-                  tier: 0, key: 0, heat: 0 };
+                  tier: 0, key: 0, heat: 0, rate: null, crashNext: false };
+  // Slow motion, musically: the song drops to half speed (a half-time feel
+  // that keeps the beat), every note bends down together like a tape
+  // braking, and the mix goes dark and roomy. When it ends, speed, pitch and
+  // brightness all glide back up over a couple of seconds -- a transition,
+  // not a section -- and a crash marks the song landing back on its feet.
+  const SLOW_RATE = 0.5, SLOW_BEND = -500;   // playback rate, cents
+  const SLOW_IN = 0.45, SLOW_OUT = 1.9;      // seconds
+  // playback rate at audio time t: a straight-line ramp between two values
+  function musicRateAt(t) {
+    const r = music.rate;
+    if (!r) return 1;
+    if (t <= r.t0) return r.from;
+    if (t >= r.t1) return r.to;
+    return r.from + (r.to - r.from) * (t - r.t0) / (r.t1 - r.t0);
+  }
+  function musicSlow(on) {
+    const a = actx;
+    if (!a || !music.timer) return;
+    const t = a.currentTime, b = music.bus;
+    const dur = on ? SLOW_IN : SLOW_OUT;
+    music.rate = { from: musicRateAt(t), to: on ? SLOW_RATE : 1, t0: t, t1: t + dur };
+    if (!on) music.crashNext = true;
+    const glide = (param, to, exp) => {
+      param.cancelScheduledValues(t);
+      param.setValueAtTime(param.value, t);
+      exp ? param.exponentialRampToValueAtTime(to, t + dur) : param.linearRampToValueAtTime(to, t + dur);
+    };
+    glide(b.bend.offset, on ? SLOW_BEND : 0, false);
+    glide(b.tone.frequency, on ? 1100 : 18000, true);
+    glide(b.wet.gain, on ? 0.6 : 0.3, false);
+    glide(b.echo.delayTime, music.sixteenth * 3 / (on ? SLOW_RATE : 1), false);
+    if (!on) noiseHit(a, b.out, t, dur, 0.05, 'bandpass', 3000);   // riser-ish whoosh
+  }
   function musicTempo() {
     return 15 / (MUSIC_BPM[difficulty] + music.tier * TIER_BPM);
   }
@@ -562,12 +619,15 @@
         if (want !== music.tier) {
           music.tier = want; music.key = TIER_KEY[want]; crash = true;
           music.sixteenth = musicTempo();
-          music.bus.echo.delayTime.setTargetAtTime(music.sixteenth * 3, music.next, 0.2);
+          if (musicRateAt(music.next) >= 1) music.bus.echo.delayTime.setTargetAtTime(music.sixteenth * 3, music.next, 0.2);
         }
       }
-      musicStep(a, music.bus, music.step, music.next, music.sixteenth,
+      const rate = musicRateAt(music.next);
+      // the speed-up transition is over: land back on the beat with a crash
+      if (music.crashNext && rate >= 1 && music.step % 4 === 0) { crash = true; music.crashNext = false; }
+      musicStep(a, music.bus, music.step, music.next, music.sixteenth / rate,
         { tier: music.tier, heat: music.heat, key: music.key, crash });
-      music.step++; music.next += music.sixteenth;
+      music.step++; music.next += music.sixteenth / rate;
     }
   }
   // How hectic the screen is right now, 0..1. Rises quickly, cools slowly.
@@ -585,7 +645,7 @@
     const g = a.createGain();
     g.gain.value = muted ? 0 : MUSIC_VOL;
     g.connect(a.destination);
-    music.tier = 0; music.key = 0; music.heat = 0;
+    music.tier = 0; music.key = 0; music.heat = 0; music.rate = null; music.crashNext = false;
     music.sixteenth = musicTempo();
     music.gain = g; music.bus = makeBus(a, g, music.sixteenth);
     music.step = 0; music.next = a.currentTime + 0.06;
@@ -595,11 +655,11 @@
   function musicStop(quick) {
     if (!music.timer) return;
     clearInterval(music.timer); music.timer = 0;
-    const g = music.gain, t = actx.currentTime;
+    const g = music.gain, bus = music.bus, t = actx.currentTime;
     g.gain.cancelScheduledValues(t);
     g.gain.setValueAtTime(g.gain.value, t);
     g.gain.linearRampToValueAtTime(0, t + (quick ? 0.05 : 1.4));
-    setTimeout(() => g.disconnect(), 2000);
+    setTimeout(() => { g.disconnect(); try { bus.bend.stop(); } catch (e) {} }, 2000);
   }
   // Silence everything while the app is in the background.
   document.addEventListener('visibilitychange', () => {
@@ -639,6 +699,14 @@
   // average seconds between shield pickups -- more frequent on harder
   // tiers, since there's more to survive and more UFOs to eat a hit from
   const SHIELD_DIFF = { easy: 26, normal: 22, hard: 17, extreme: 13 };
+  // shields stack: each pickup adds a layer (up to SHIELD_MAX) and each hit
+  // peels one off. A short grace window after a hit lets you escape the
+  // cluster that caused it instead of losing every layer at once.
+  const SHIELD_MAX = 3, SHIELD_GRACE = 0.6;
+  // slow motion: an hourglass pickup that slows every hazard (not the ship)
+  // for SLOW_TIME seconds, then eases time back to full speed
+  const SLOW_DIFF = { easy: 32, normal: 28, hard: 24, extreme: 20 };
+  const SLOW_TIME = 3, SLOW_SCALE = 0.4;
 
   // planet progression: the planet visibly transforms through 20 stages the
   // longer you survive -- geological, then crystalline/bioluminescent, then
@@ -742,7 +810,8 @@
   let score = 0, combo = 1, elapsed = 0, nextDebris = 0, nextSpark = 0, nextUFO = 0, nextShield = 0;
   let sparkCount = 0, nearCount = 0;
   let shake = 0, flash = 0, readyAt = 0, deathAt = -99;
-  let shieldPickup = null, shieldActive = false;
+  let shieldPickup = null, shields = 0, graceT = 0, shieldHitT = 0;
+  let slowPickup = null, nextSlow = 0, slowT = 0, timeScale = 1;
   let planetStage = 0;
 
   const SPEED = 2.15;        // rad/s
@@ -754,7 +823,9 @@
     nextDebris = menu ? 1.2 : DIFF[difficulty].initialDelay; nextSpark = 2.2;
     nextUFO = UFO_DIFF[difficulty].spawnEvery[0] * 0.6;
     nextShield = 5 + Math.random() * 5;
-    shieldPickup = null; shieldActive = false;
+    shieldPickup = null; shields = 0; graceT = 0; shieldHitT = 0;
+    slowPickup = null; slowT = 0; timeScale = 1;
+    nextSlow = SLOW_DIFF[difficulty] * (0.6 + Math.random() * 0.4);
     planetStage = 0;
     shake = 0; flash = 0;
   }
@@ -864,13 +935,23 @@
       lifespan: uc.lifespan,
     });
   }
-  // shield absorbs one lethal hit: the offending hazard is destroyed and
-  // the player survives, instead of dying
+  // What a lethal touch does: nothing during the post-hit grace window,
+  // peel off a shield layer if there is one, otherwise end the run.
+  // Returns 'grace', 'absorbed' or 'dead'.
+  function takeHit(x, y) {
+    if (graceT > 0) return 'grace';
+    if (shields > 0) { shieldAbsorb(x, y); return 'absorbed'; }
+    die();
+    return 'dead';
+  }
   function shieldAbsorb(x, y) {
-    shieldActive = false;
+    shields--;
+    graceT = SHIELD_GRACE;
+    shieldHitT = 0.6;
     shake = Math.max(shake, REDUCE ? 0 : 10 * u);
     burst(x, y, REDUCE ? 10 : 26, '#6FE3FF', 200 * u);
-    float(px(), py() - 22 * u, 'SHIELD', '#6FE3FF');
+    burst(px(), py(), REDUCE ? 8 : 20, '#FF4D5E', 160 * u);
+    float(px(), py() - 22 * u, shields ? 'SHIELD -1' : 'SHIELD DOWN', '#FF4D5E');
     sfx.shieldBreak();
   }
 
@@ -895,13 +976,26 @@
     spawnR = Math.hypot(Math.max(cx, W - cx), Math.max(cy, H - cy)) + 45;
   }
 
-  function update(dt) {
-    recentre(dt);
+  // rdt is real time. Everything in the world (hazards, pickups, spawn
+  // timers, particles) runs on dt, which slow motion scales down; the ship,
+  // the score and survival time always run in real time.
+  function update(rdt) {
+    recentre(rdt);
     const playing = state === 'play';
-    if (playing) { elapsed += dt; score += dt * 8; }
-    if (playing && music.timer) musicHeat(dt);
+    if (playing && slowT > 0) {
+      slowT -= rdt;
+      if (slowT <= 0) { slowT = 0; sfx.slowOut(); musicSlow(false); }
+    }
+    const targetScale = slowT > 0 ? SLOW_SCALE : 1;
+    // snap into slow motion, ease back out of it over about a second
+    timeScale += (targetScale - timeScale) * Math.min(1, rdt * (targetScale < timeScale ? 9 : 2.5));
+    const dt = rdt * timeScale;
+    graceT = Math.max(0, graceT - rdt);
+    shieldHitT = Math.max(0, shieldHitT - rdt);
+    if (playing) { elapsed += rdt; score += rdt * 8; }
+    if (playing && music.timer) musicHeat(rdt);
 
-    player.a += SPEED * player.dir * dt;
+    player.a += SPEED * player.dir * rdt;
     const ppx = px(), ppy = py();
     player.trail.push({ x: ppx, y: ppy });
     if (player.trail.length > 26) player.trail.shift();
@@ -945,12 +1039,9 @@
       if (playing) {
         const gap = Math.hypot(d.x - ppx, d.y - ppy);
         if (gap < d.r + SHIP) {
-          if (shieldActive) {
-            shieldAbsorb(d.x, d.y);
-            debris.splice(i, 1);
-            continue;
-          }
-          die(); return;
+          const res = takeHit(d.x, d.y);
+          if (res === 'dead') return;
+          if (res === 'absorbed') { debris.splice(i, 1); continue; }
         }
         if (!d.near && gap < d.r + SHIP + 26 * u) {
           d.near = true; nearCount++; score += 5;
@@ -1007,12 +1098,9 @@
 
         const gapU = Math.hypot(uu.x - ppx, uu.y - ppy);
         if (gapU < uu.r + SHIP) {
-          if (shieldActive) {
-            shieldAbsorb(uu.x, uu.y);
-            ufos.splice(i, 1);
-            continue;
-          }
-          die(); return;
+          const res = takeHit(uu.x, uu.y);
+          if (res === 'dead') return;
+          if (res === 'absorbed') { ufos.splice(i, 1); continue; }
         }
       }
     }
@@ -1025,12 +1113,9 @@
       if (playing) {
         const gap = Math.hypot(s.x - ppx, s.y - ppy);
         if (gap < SHIP + 4 * u) {
-          if (shieldActive) {
-            shieldAbsorb(s.x, s.y);
-            shots.splice(i, 1);
-            continue;
-          }
-          die(); return;
+          const res = takeHit(s.x, s.y);
+          if (res === 'dead') return;
+          if (res === 'absorbed') { shots.splice(i, 1); continue; }
         }
       }
     }
@@ -1038,7 +1123,7 @@
     // shield pickup: spawns on a timer, collected like a spark
     if (playing) {
       nextShield -= dt;
-      if (nextShield <= 0 && !shieldPickup && !shieldActive) {
+      if (nextShield <= 0 && !shieldPickup && shields < SHIELD_MAX) {
         shieldPickup = { a: Math.random() * Math.PI * 2, life: 8 };
         nextShield = SHIELD_DIFF[difficulty] * (0.7 + Math.random() * 0.6);
       }
@@ -1046,13 +1131,36 @@
         shieldPickup.life -= dt;
         const sx = cx + Math.cos(shieldPickup.a) * R_ORBIT, sy = cy + Math.sin(shieldPickup.a) * R_ORBIT;
         if (Math.hypot(sx - ppx, sy - ppy) < SHIP + 15 * u) {
-          shieldActive = true;
-          float(sx, sy - 20 * u, 'SHIELD', '#6FE3FF');
+          shields++;
+          float(sx, sy - 20 * u, shields > 1 ? 'SHIELD x' + shields : 'SHIELD', '#6FE3FF');
           burst(sx, sy, 14, '#6FE3FF', 140 * u);
           sfx.shieldGet();
           shieldPickup = null;
         } else if (shieldPickup.life <= 0) {
           shieldPickup = null;
+        }
+      }
+    }
+
+    // slow-motion pickup: spawns on its own timer, collected like a spark
+    if (playing) {
+      nextSlow -= dt;
+      if (nextSlow <= 0 && !slowPickup && slowT <= 0) {
+        slowPickup = { a: Math.random() * Math.PI * 2, life: 8 };
+        nextSlow = SLOW_DIFF[difficulty] * (0.7 + Math.random() * 0.6);
+      }
+      if (slowPickup) {
+        slowPickup.life -= dt;
+        const sx = cx + Math.cos(slowPickup.a) * R_ORBIT, sy = cy + Math.sin(slowPickup.a) * R_ORBIT;
+        if (Math.hypot(sx - ppx, sy - ppy) < SHIP + 15 * u) {
+          slowT = SLOW_TIME;
+          float(sx, sy - 20 * u, 'SLOW-MO', '#B79CFF');
+          burst(sx, sy, 16, '#B79CFF', 150 * u);
+          sfx.slowIn();
+          musicSlow(true);
+          slowPickup = null;
+        } else if (slowPickup.life <= 0) {
+          slowPickup = null;
         }
       }
     }
@@ -1105,15 +1213,19 @@
       }
     }
 
-    shake *= Math.pow(0.0025, dt);
-    flash *= Math.pow(0.0008, dt);
+    shake *= Math.pow(0.0025, rdt);
+    flash *= Math.pow(0.0008, rdt);
 
     // hud
     el.score.textContent = Math.floor(score).toLocaleString();
     el.best.textContent = Math.max(best, Math.floor(score)).toLocaleString();
     el.comboV.textContent = 'x' + combo;
     el.combo.classList.toggle('on', playing && combo > 1);
-    el.shieldBadge.classList.toggle('on', playing && shieldActive);
+    el.shieldBadge.classList.toggle('on', playing && (shields > 0 || shieldHitT > 0));
+    el.shieldBadge.classList.toggle('hit', shieldHitT > 0);
+    el.shieldV.textContent = '●'.repeat(shields) + '○'.repeat(SHIELD_MAX - shields);
+    el.slowBadge.classList.toggle('on', playing && slowT > 0);
+    el.slowV.textContent = slowT.toFixed(1);
   }
 
   /* ---------- draw ---------- */
@@ -1293,6 +1405,21 @@
       ctx.restore();
     }
 
+    // slow-motion pickup: a violet hourglass
+    if (slowPickup) {
+      const sx = cx + Math.cos(slowPickup.a) * R_ORBIT, sy = cy + Math.sin(slowPickup.a) * R_ORBIT;
+      const pulse = 0.6 + 0.4 * Math.sin(t * 5);
+      const k = (6 + pulse * 1.2) * u;
+      ctx.save();
+      ctx.shadowColor = '#B79CFF'; ctx.shadowBlur = 14 * u * pulse;
+      ctx.strokeStyle = '#B79CFF'; ctx.lineWidth = 2 * u;
+      ctx.beginPath();
+      ctx.moveTo(sx - k * 0.8, sy - k); ctx.lineTo(sx + k * 0.8, sy - k);
+      ctx.lineTo(sx - k * 0.8, sy + k); ctx.lineTo(sx + k * 0.8, sy + k);
+      ctx.closePath(); ctx.stroke();
+      ctx.restore();
+    }
+
     // debris
     for (const d of debris) {
       const len = Math.hypot(d.vx, d.vy);
@@ -1395,10 +1522,22 @@
       const ppx = px(), ppy = py();
       ctx.save();
       ctx.translate(ppx, ppy);
-      if (shieldActive) {
+      // one ring per shield layer; blink during the post-hit grace window
+      if (shields > 0 && !(graceT > 0 && Math.floor(t * 16) % 2)) {
         ctx.strokeStyle = 'rgba(111,227,255,' + (0.55 + 0.25 * Math.sin(t * 5)).toFixed(2) + ')';
         ctx.lineWidth = 1.6 * u;
-        ctx.beginPath(); ctx.arc(0, 0, SHIP * 2.2, 0, 6.2832); ctx.stroke();
+        for (let k = 0; k < shields; k++) {
+          ctx.beginPath(); ctx.arc(0, 0, SHIP * (2.2 + k * 0.55), 0, 6.2832); ctx.stroke();
+        }
+      }
+      // a shattering red ring the moment a layer breaks
+      if (shieldHitT > 0) {
+        const f = shieldHitT / 0.6;
+        ctx.strokeStyle = 'rgba(255,77,94,' + f.toFixed(2) + ')';
+        ctx.lineWidth = 2 * u;
+        ctx.setLineDash([4 * u, 5 * u]);
+        ctx.beginPath(); ctx.arc(0, 0, SHIP * (2.2 + (1 - f) * 2.5), 0, 6.2832); ctx.stroke();
+        ctx.setLineDash([]);
       }
       ctx.rotate(player.a + player.dir * Math.PI / 2);
       ctx.shadowColor = '#FF9A3C'; ctx.shadowBlur = 16 * u;
@@ -1434,6 +1573,15 @@
     ctx.globalAlpha = 1;
 
     // impact flash
+    // slow motion: a violet wash with darker edges, fading with the time scale
+    const slowK = (1 - timeScale) / (1 - SLOW_SCALE);
+    if (slowK > 0.01) {
+      const g = ctx.createRadialGradient(cx, cy, R_ORBIT * 0.8, cx, cy, Math.hypot(W, H) * 0.6);
+      g.addColorStop(0, 'rgba(120,90,255,' + (slowK * 0.06).toFixed(3) + ')');
+      g.addColorStop(1, 'rgba(60,30,140,' + (slowK * 0.35).toFixed(3) + ')');
+      ctx.fillStyle = g;
+      ctx.fillRect(-40, -40, W + 80, H + 80);
+    }
     if (flash > 0.01) {
       ctx.fillStyle = 'rgba(255,77,94,' + (flash * 0.32).toFixed(3) + ')';
       ctx.fillRect(-40, -40, W + 80, H + 80);
