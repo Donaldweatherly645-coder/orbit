@@ -51,7 +51,7 @@
   /* ---- telemetry bar ---- */
   #hud{
     position:absolute; top:0; left:0; right:0; z-index:2;
-    display:flex; align-items:flex-start; gap:28px;
+    display:flex; flex-wrap:wrap; align-items:flex-start; gap:12px 28px;
     padding:18px 20px; pointer-events:none;
     padding-top:max(18px, env(safe-area-inset-top));
     padding-left:max(20px, env(safe-area-inset-left));
@@ -68,12 +68,15 @@
   #combo{margin-left:auto; align-items:flex-end; opacity:0; transition:opacity .18s}
   #combo.on{opacity:1}
   #combo .v{color:var(--sodium)}
-  #shieldBadge{opacity:0; transition:opacity .18s}
-  #shieldBadge.on{opacity:1}
+  #shieldBadge{display:none}
+  #shieldBadge.on{display:flex}
   #shieldBadge .v{color:#6FE3FF; letter-spacing:.12em}
   #shieldBadge.hit .v{color:var(--danger)}
-  #slowBadge{opacity:0; transition:opacity .18s}
-  #slowBadge.on{opacity:1}
+  #buffs .v{color:#FFD24C}
+  #buffs.pop .v{animation:buffPop .6s cubic-bezier(.2,.7,.3,1)}
+  @keyframes buffPop{0%{transform:scale(1.8); color:#fff} 100%{transform:scale(1)}}
+  #slowBadge{display:none}
+  #slowBadge.on{display:flex}
   #slowBadge .v{color:#B79CFF}
   /* upgrades collected this run */
   #items{
@@ -200,8 +203,10 @@
   }
   @media (max-width:520px){
     h1{font-size:50px} .panel{padding:30px 26px} .final{font-size:52px}
+    .read .v{font-size:19px}
+    #mute{margin-left:6px; padding:6px 8px}
     #hud{
-      gap:18px; padding:14px;
+      gap:10px 14px; padding:14px;
       padding-top:max(14px, env(safe-area-inset-top));
       padding-left:max(14px, env(safe-area-inset-left));
       padding-right:max(14px, env(safe-area-inset-right));
@@ -217,6 +222,7 @@
     <div class="read" id="score"><span class="k">SCORE</span><span class="v">0</span></div>
     <div class="read" id="best"><span class="k">BEST</span><span class="v">0</span></div>
     <div class="read" id="shieldBadge"><span class="k">SHIELD</span><span class="v">●</span></div>
+    <div class="read" id="buffs"><span class="k">BUFFS</span><span class="v">0</span></div>
     <div class="read" id="slowBadge"><span class="k">SLOW-MO</span><span class="v">3.0</span></div>
     <div class="read" id="combo"><span class="k">CHAIN</span><span class="v">x1</span></div>
     <button id="mute" type="button" aria-pressed="false">SOUND ON</button>
@@ -255,6 +261,8 @@
         <div class="stat best"><span class="k">BEST</span><span class="v" id="stBest">0</span></div>
         <div class="stat"><span class="k">MODE</span><span class="v" id="stMode">NORMAL</span></div>
         <div class="stat"><span class="k">PLANET</span><span class="v" id="stPlanet">DORMANT</span></div>
+        <div class="stat"><span class="k">BUFFS</span><span class="v" id="stBuffs">0</span></div>
+        <div class="stat"><span class="k">ALL-TIME BUFFS</span><span class="v" id="stBuffsAll">0</span></div>
       </div>
       <p class="diffLabel">DIFFICULTY</p>
       <div class="diffs" role="group" aria-label="Difficulty" data-diffs>
@@ -290,6 +298,10 @@
     stBest: document.getElementById('stBest'),
     stMode: document.getElementById('stMode'),
     stPlanet: document.getElementById('stPlanet'),
+    stBuffs: document.getElementById('stBuffs'),
+    stBuffsAll: document.getElementById('stBuffsAll'),
+    buffs: document.getElementById('buffs'),
+    buffsV: document.querySelector('#buffs .v'),
     titleBest: document.getElementById('titleBest'),
     overlay: document.getElementById('overlay'),
     shieldBadge: document.getElementById('shieldBadge'),
@@ -622,7 +634,7 @@
   }
 
   const music = { gain: null, bus: null, step: 0, next: 0, sixteenth: 0, timer: 0,
-                  tier: 0, key: 0, stage: 0, heat: 0, rate: null, crashNext: false };
+                  tier: 0, key: 0, stage: 0, heat: 0, rate: null, crashNext: false, slow: false };
   // Slow motion, musically: the song drops to half speed (a half-time feel
   // that keeps the beat), every note bends down together like a tape
   // braking, and the mix goes dark and roomy. When it ends, speed, pitch and
@@ -643,6 +655,7 @@
     if (!a || !music.timer) return;
     const t = a.currentTime, b = music.bus;
     const dur = on ? SLOW_IN : SLOW_OUT;
+    music.slow = on;
     music.rate = { from: musicRateAt(t), to: on ? SLOW_RATE : 1, t0: t, t1: t + dur };
     if (!on) music.crashNext = true;
     const glide = (param, to, exp) => {
@@ -667,7 +680,7 @@
       let crash = false, fanfare = false;
       // a new planet changes the song on the very next bar, with a crash
       // and a fanfare, so the reward is heard as well as seen
-      if (music.step % 16 === 0 && planetStage !== music.stage) {
+      if (music.step % 16 === 0 && planetStage !== music.stage && !music.slow && musicRateAt(music.next) >= 1) {
         music.stage = planetStage;
         music.tier = musicTierFor(planetStage);
         music.key = STAGE_KEY[planetStage % STAGE_KEY.length];
@@ -684,7 +697,12 @@
     }
   }
   // How hectic the screen is right now, 0..1. Rises quickly, cools slowly.
+  // true from the moment slow motion starts until the speed-up transition
+  // has fully landed: while it's set the arrangement is frozen, so what
+  // you hear slow down and speed back up is always the same song
+  const musicHeld = () => music.slow || (actx && musicRateAt(actx.currentTime) < 1);
   function musicHeat(dt) {
+    if (musicHeld()) return;
     let threat = Math.min(0.25, elapsed / 400) + (combo - 1) * 0.025;
     for (const d of debris) if (Math.hypot(d.x - cx, d.y - cy) < R_ORBIT * 2.2) threat += 0.06;
     threat += ufos.length * 0.18 + shots.length * 0.12;
@@ -698,7 +716,7 @@
     const g = a.createGain();
     g.gain.value = muted ? 0 : MUSIC_VOL;
     g.connect(a.destination);
-    music.tier = 0; music.key = 0; music.stage = 0; music.heat = 0; music.rate = null; music.crashNext = false;
+    music.tier = 0; music.key = 0; music.stage = 0; music.heat = 0; music.rate = null; music.crashNext = false; music.slow = false;
     music.sixteenth = musicTempo();
     music.gain = g; music.bus = makeBus(a, g, music.sixteenth);
     music.step = 0; music.next = a.currentTime + 0.06;
@@ -857,6 +875,9 @@
   let state = 'menu';        // menu | play | over
   let best = 0;
   try { best = parseInt(localStorage.getItem('orbit.best') || '0', 10) || 0; } catch (e) {}
+  // buffs (planet upgrades) collected this run, and across every run
+  let buffCount = 0, buffsAllTime = 0;
+  try { buffsAllTime = parseInt(localStorage.getItem('orbit.buffs') || '0', 10) || 0; } catch (e) {}
 
   const player = { a: -Math.PI / 2, dir: 1, trail: [] };
   let debris = [], sparks = [], parts = [], floats = [], ufos = [], shots = [];
@@ -864,7 +885,7 @@
   let sparkCount = 0, nearCount = 0;
   let shake = 0, flash = 0, readyAt = 0, deathAt = -99;
   let shieldPickup = null, shields = 0, graceT = 0, shieldHitT = 0;
-  let slowPickup = null, nextSlow = 0, slowT = 0, timeScale = 1;
+  let slowPickup = null, nextSlow = 0, slowT = 0, timeScale = 1, slowVis = 0;
   let planetStage = 0;
 
   const SPEED = 2.15;        // rad/s
@@ -904,6 +925,10 @@
   }
   function grantItem(it) {
     owned[it.id] = (owned[it.id] || 0) + 1;
+    buffCount++; buffsAllTime++;
+    try { localStorage.setItem('orbit.buffs', String(buffsAllTime)); } catch (e) {}
+    el.buffsV.textContent = buffCount;
+    el.buffs.classList.remove('pop'); void el.buffs.offsetWidth; el.buffs.classList.add('pop');
     if (it.id === 'patch') shields = Math.min(SHIELD_MAX, shields + 1);
     if (it.id === 'moon') moon = { a: 0, cd: 0, x: 0, y: 0 };
     if (it.id === 'nova') novaT = NOVA_EVERY;
@@ -927,9 +952,10 @@
     nextUFO = UFO_DIFF[difficulty].spawnEvery[0] * 0.6;
     nextShield = 5 + Math.random() * 5;
     shieldPickup = null; shields = 0; graceT = 0; shieldHitT = 0;
-    slowPickup = null; slowT = 0; timeScale = 1;
+    slowPickup = null; slowT = 0; timeScale = 1; slowVis = 0;
     owned = {}; novas = []; reward = null; hitStopT = 0;
     moon = null; echoCount = 0; novaT = 0; lastStandUsed = false;
+    buffCount = 0; el.buffsV.textContent = '0';
     renderItems();
     nextSlow = SLOW_DIFF[difficulty] * (0.6 + Math.random() * 0.4);
     planetStage = 0;
@@ -948,6 +974,7 @@
 
   function die() {
     state = 'over';
+    slowT = 0; hitStopT = 0;
     deathAt = performance.now();
     readyAt = deathAt + 700;
     shake = REDUCE ? 0 : 26 * u;
@@ -965,6 +992,8 @@
     el.stBest.textContent = best.toLocaleString();
     el.stMode.textContent = DIFF[difficulty].label;
     el.stPlanet.textContent = PLANET_STAGES[planetStage].label;
+    el.stBuffs.textContent = buffCount;
+    el.stBuffsAll.textContent = buffsAllTime.toLocaleString();
     el.titleBest.textContent = best.toLocaleString();
     el.overlay.scrollTop = 0;
     el.over.classList.remove('hidden');
@@ -1056,7 +1085,7 @@
       novas.push({ r: R_PLANET, maxR: spawnR + 60, full: true, color: '#FFD24C' });
       float(px(), py() - 22 * u, 'LAST STAND', '#FFD24C');
       sfx.nova();
-      if (slowT <= 0) { slowT = SLOW_TIME; sfx.slowIn(); musicSlow(true); }
+      if (slowT <= 0) { slowT = has('chrono') ? 5 : SLOW_TIME; sfx.slowIn(); musicSlow(true); }
       return 'absorbed';
     }
     die();
@@ -1110,6 +1139,7 @@
     // snap into slow motion, ease back out of it over about a second
     timeScale += (targetScale - timeScale) * Math.min(1, rdt * (targetScale < timeScale ? 9 : 2.5));
     const dt = rdt * timeScale;
+    slowVis += ((slowT > 0 ? 1 : 0) - slowVis) * Math.min(1, rdt * (slowT > 0 ? 9 : 2.5));
     graceT = Math.max(0, graceT - rdt);
     shieldHitT = Math.max(0, shieldHitT - rdt);
     if (playing) { elapsed += rdt; score += rdt * 8; }
@@ -1250,7 +1280,9 @@
 
     // shield pickup: spawns on a timer, collected like a spark
     if (playing) {
-      nextShield -= dt;
+      // the countdown only runs while there's room for another layer, so
+      // losing a layer never makes a replacement appear instantly
+      if (shields < SHIELD_MAX) nextShield -= dt;
       if (nextShield <= 0 && !shieldPickup && shields < SHIELD_MAX) {
         shieldPickup = { a: Math.random() * Math.PI * 2, life: 8 };
         nextShield = SHIELD_DIFF[difficulty] * (0.7 + Math.random() * 0.6);
@@ -1273,7 +1305,7 @@
 
     // slow-motion pickup: spawns on its own timer, collected like a spark
     if (playing) {
-      nextSlow -= dt;
+      if (slowT <= 0) nextSlow -= dt;
       if (nextSlow <= 0 && !slowPickup && slowT <= 0) {
         slowPickup = { a: Math.random() * Math.PI * 2, life: 8 };
         nextSlow = SLOW_DIFF[difficulty] * (0.7 + Math.random() * 0.6) * (has('chrono') ? 0.7 : 1);
@@ -1412,7 +1444,7 @@
     el.shieldV.textContent = '●'.repeat(shields) + '○'.repeat(SHIELD_MAX - shields);
     el.slowBadge.classList.toggle('on', playing && slowT > 0);
     el.slowV.textContent = slowT.toFixed(1);
-    el.items.style.display = state === 'menu' ? 'none' : '';
+    el.items.style.display = state === 'play' ? '' : 'none';
   }
 
   /* ---------- draw ---------- */
@@ -1816,7 +1848,7 @@
     }
 
     // slow motion: a violet wash with darker edges, fading with the time scale
-    const slowK = (1 - timeScale) / (1 - SLOW_SCALE);
+    const slowK = slowVis;
     if (slowK > 0.01) {
       const g = ctx.createRadialGradient(cx, cy, R_ORBIT * 0.8, cx, cy, Math.hypot(W, H) * 0.6);
       g.addColorStop(0, 'rgba(120,90,255,' + (slowK * 0.06).toFixed(3) + ')');
