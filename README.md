@@ -15,7 +15,7 @@ Your ship is locked in a fixed orbit around the planet. Press the one button to 
 - **Catch the violet hourglass** for three seconds of slow motion: every hazard crawls at 40% speed while your ship keeps full speed, then time eases back up to normal.
 - **Watch for UFOs.** They hover nearby, glow, and charge up before firing a shot straight at wherever you are the instant they finish charging. Touching one is as lethal as debris.
 - **Survive long enough and the planet transforms.** It progresses through 20 stages the longer you last -- from a dull, dormant rock, through molten and crystalline forms, into something increasingly cosmic: rings appear, then moons, then a pulsing corona, building toward a final glowing, many-ringed, many-mooned form. Stages are paced by survival time (each spark you catch adds a one-second bonus), not raw score, so a hot spark chain can't blow through them in seconds. On NORMAL the first stage takes about 20-25 seconds, the gaps stretch to about 40 seconds near the top, and the final form arrives around the 8-10 minute mark. EASY is paced a little slower; HARD and EXTREME a little faster, since their runs are shorter.
-- **Every new planet is a payday.** A shockwave bursts from the planet and wipes the screen clear of debris, shots and UFOs, time freezes for a beat, a reward chime plays, the planet's name lands in a banner -- and the soundtrack changes on the very next bar. You also get a random upgrade for the rest of the run:
+- **Every new planet is a payday.** A shockwave bursts from the planet and wipes the screen clear of debris, shots and UFOs, time freezes for a beat, a reward chime plays, the planet's name lands in a banner, and a cymbal crash and fanfare ring out over the soundtrack. You also get a random upgrade for the rest of the run:
 
   | Upgrade | Rarity | Effect |
   |---|---|---|
@@ -51,7 +51,12 @@ Pick a difficulty from the title screen before launching. Every tier has its own
 
 Your best score is saved locally in your browser and shown on the title screen.
 
-**Testing the ending:** add `?dev=boss` to the address (for example `https://donaldweatherly645-coder.github.io/orbit/?dev=boss`) to start every run on the final planet, with the Mothership arriving a few seconds in. Use `?dev=god` to make your ship invincible, or `?dev=boss,god` for both, so you can watch the whole ending and cutscene. The title screen says DEV MODE, and dev runs never change your saved best score.
+**Dev mode (for testing):** tap **DEV MODE** under the difficulty buttons, on the title or game-over screen. Two more toggles appear:
+
+- **GOD MODE** makes your ship invincible: hits pass straight through.
+- **LEVEL SELECT** starts every run on the planet you pick with the ◀ ▶ buttons (it wraps, so planet 20 is one tap back from planet 1). You start with the upgrades the earlier planets would have given you. Planet 20 brings the Mothership in a few seconds after launch.
+
+Each toggle stays as you left it, across runs and visits, until you switch it off. With DEV MODE off, neither applies. While a dev effect is on, a green DEV tag sits in the top bar, and the run never saves your best score or adds to your all-time buffs. The old address shortcuts still work: `?dev=boss` turns on level select at planet 20, `?dev=god` turns on god mode, and `?dev=boss,god` does both.
 
 ## Install it on your phone
 
@@ -77,4 +82,4 @@ python3 -m http.server 8000
 
 ## Tech
 
-Vanilla HTML/CSS/JS, rendered on a `<canvas>`. No frameworks, no build tooling. Sound effects are synthesized at runtime with the Web Audio API — there are no audio files.
+Vanilla HTML/CSS/JS, rendered on a `<canvas>`. No frameworks, no build tooling. Sound effects are synthesized at runtime with the Web Audio API; the soundtrack is a single MP3 played through the same mixer.

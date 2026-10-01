@@ -209,11 +209,41 @@
     margin:22px 0 0;
   }
   .installTip b{color:var(--ice); font-weight:500; white-space:nowrap}
+  /* dev mode: a toggle under the difficulty picker that reveals god mode
+     and a level (planet) picker */
+  #devBox{margin-top:16px}
+  .devToggle{
+    font-family:var(--mono); font-size:10px; letter-spacing:.22em;
+    color:var(--slate); background:transparent; border:1px dashed var(--line);
+    padding:8px 14px; min-height:40px; cursor:pointer;
+  }
+  .devToggle[aria-pressed="true"]{color:#7CFFC2; border:1px solid #7CFFC2}
+  .devToggle:focus-visible,.devOpt:focus-visible{outline:2px solid var(--sodium); outline-offset:2px}
+  #devTools{margin-top:8px; padding:8px; border:1px dashed rgba(124,255,194,.35)}
+  .devRow{display:flex; gap:8px}
+  .devOpt{
+    flex:1 1 0; min-width:0; min-height:44px; padding:10px 6px;
+    font-family:var(--mono); font-size:10px; letter-spacing:.06em; white-space:nowrap;
+    color:var(--slate-lit); background:transparent; border:1px solid var(--line); cursor:pointer;
+  }
+  .devOpt[aria-pressed="true"]{color:#7CFFC2; border-color:#7CFFC2; background:rgba(124,255,194,.08)}
+  .devOpt:disabled{cursor:default}
+  .lvlPick{display:flex; align-items:center; gap:8px; margin-top:8px; transition:opacity .15s}
+  .lvlPick.off{opacity:.3}
+  .lvlPick .devOpt{flex:0 0 48px; font-size:14px}
+  .lvlRead{flex:1; display:flex; flex-direction:column; align-items:center; gap:5px; min-width:0}
+  .lvlRead .k{font-family:var(--mono); font-size:9px; letter-spacing:.22em; color:var(--slate)}
+  .lvlRead .v{
+    display:flex; align-items:center; gap:7px; font-weight:700; font-size:15px;
+    letter-spacing:.1em; color:var(--ice); white-space:nowrap;
+  }
+  .lvlRead .swatch{width:14px; height:14px; border-radius:50%; flex:none}
+  #devTag .v{color:#7CFFC2; font-size:13px; letter-spacing:.1em}
   .hidden{display:none}
   #title{align-self:end; margin-bottom:6vh}
   #title h1{animation:rise .7s cubic-bezier(.2,.7,.3,1) both}
   #title .eyebrow{animation:rise .7s .06s cubic-bezier(.2,.7,.3,1) both}
-  #title .blurb,#title .bestLine,#title .diffLabel,#title .diffs,#title .keys{animation:rise .7s .12s cubic-bezier(.2,.7,.3,1) both}
+  #title .blurb,#title .bestLine,#title .diffLabel,#title .diffs,#title .keys,#title #devBox{animation:rise .7s .12s cubic-bezier(.2,.7,.3,1) both}
   @keyframes rise{from{opacity:0; transform:translateY(10px)} to{opacity:1; transform:none}}
   .blink{animation:blink 1.5s steps(2,end) infinite}
   @keyframes blink{50%{opacity:.25}}
@@ -239,6 +269,7 @@
 
   <div id="hud">
     <div class="read" id="score"><span class="k">SCORE</span><span class="v">0</span></div>
+    <div class="read hidden" id="devTag"><span class="k">DEV</span><span class="v">GOD</span></div>
     <div class="read" id="best"><span class="k">BEST</span><span class="v">0</span></div>
     <div class="read" id="shieldBadge"><span class="k">SHIELD</span><span class="v">●</span></div>
     <div class="read" id="buffs"><span class="k">BUFFS</span><span class="v">0</span></div>
@@ -261,6 +292,23 @@
         <button class="diff" type="button" data-diff="normal">NORMAL</button>
         <button class="diff" type="button" data-diff="hard">HARD</button>
         <button class="diff" type="button" data-diff="extreme">EXTREME</button>
+      </div>
+      <div id="devBox">
+        <button class="devToggle" type="button" id="devToggle" aria-pressed="false">DEV MODE: OFF</button>
+        <div id="devTools" class="hidden">
+          <div class="devRow">
+            <button class="devOpt" type="button" id="devGod" aria-pressed="false">GOD MODE: OFF</button>
+            <button class="devOpt" type="button" id="devLvl" aria-pressed="false">LEVEL SELECT: OFF</button>
+          </div>
+          <div class="lvlPick off" id="lvlPick">
+            <button class="devOpt" type="button" id="lvlDown" aria-label="Previous planet">&#9664;</button>
+            <div class="lvlRead">
+              <span class="k">START PLANET <span id="lvlNum">1</span>/20</span>
+              <span class="v"><i class="swatch" id="lvlSwatch"></i><span id="lvlName">DORMANT</span></span>
+            </div>
+            <button class="devOpt" type="button" id="lvlUp" aria-label="Next planet">&#9654;</button>
+          </div>
+        </div>
       </div>
       <div class="keys">
         <span class="key">CLICK</span><span class="key">SPACE</span><span class="key">TAP</span>
@@ -888,8 +936,11 @@
   }
   function grantItem(it) {
     owned[it.id] = (owned[it.id] || 0) + 1;
-    buffCount++; buffsAllTime++;
-    try { localStorage.setItem('orbit.buffs', String(buffsAllTime)); } catch (e) {}
+    buffCount++;
+    if (!devRun) {
+      buffsAllTime++;
+      try { localStorage.setItem('orbit.buffs', String(buffsAllTime)); } catch (e) {}
+    }
     el.buffsV.textContent = buffCount;
     el.buffs.classList.remove('pop'); void el.buffs.offsetWidth; el.buffs.classList.add('pop');
     if (it.id === 'patch') shields = Math.min(SHIELD_MAX, shields + 1);
@@ -904,7 +955,7 @@
   function buffStatus(it) {
     const n = owned[it.id];
     switch (it.id) {
-      case 'patch': return { s: '+' + n + (n > 1 ? ' SHIELDS' : ' SHIELD'), f: 1 };
+      case 'patch': return { s: n > 1 ? 'PATCHED x' + n : '+1 SHIELD', f: 1 };
       case 'echo': return { s: echoCount + '/10 MISSES', f: echoCount / 10 };
       case 'nova': return { s: 'NEXT IN ' + Math.ceil(novaT) + 'S', f: novaT / NOVA_EVERY, timed: true };
       case 'moon': return moon && moon.cd > 0
@@ -976,31 +1027,80 @@
     shake = 0; flash = 0;
   }
 
-  // Dev mode, for testing the ending. Open the game with ?dev=boss to skip
-  // straight to the final planet, with the mothership arriving a few seconds
-  // in, and/or ?dev=god to make the ship invincible (hits pass straight
-  // through). Combine them as ?dev=boss,god. Dev runs never touch your saved
-  // best score.
-  const DEV = ((location.search.match(/[?&]dev=([^&]*)/) || [])[1] || '').toLowerCase().split(/,|%2c/);
-  const DEV_BOSS = DEV.includes('boss'), DEV_GOD = DEV.includes('god');
-  if (DEV_BOSS || DEV_GOD) document.querySelector('#title .eyebrow').textContent =
-    'DEV MODE: ' + [DEV_BOSS && 'SKIP TO BOSS', DEV_GOD && 'GOD MODE'].filter(Boolean).join(' + ');
+  // Dev mode, for testing. The DEV MODE button on the title and game-over
+  // screens reveals two more toggles, each remembered between runs and
+  // visits until you switch it off:
+  //  - GOD MODE: the ship is invincible (hits pass straight through)
+  //  - LEVEL SELECT: every run starts on the chosen planet, holding the
+  //    upgrades the planets before it would have paid out. Planet 20 brings
+  //    the mothership in a few seconds after launch.
+  // With DEV MODE off, neither applies. The old URL flags still work as
+  // shortcuts: ?dev=boss turns on level select at planet 20, ?dev=god turns
+  // on god mode, ?dev=boss,god both. A run with any dev effect never saves
+  // your best score or adds to your all-time buffs.
+  const LAST = PLANET_STAGES.length;
+  const dev = { on: false, god: false, lvl: false, level: 1 };
+  try { Object.assign(dev, JSON.parse(localStorage.getItem('orbit.dev') || '{}')); } catch (e) {}
+  dev.level = Math.max(1, Math.min(LAST, Math.round(dev.level) || 1));
+  const URL_DEV = ((location.search.match(/[?&]dev=([^&]*)/) || [])[1] || '').toLowerCase().split(/,|%2c/);
+  if (URL_DEV.includes('boss')) Object.assign(dev, { on: true, lvl: true, level: LAST });
+  if (URL_DEV.includes('god')) Object.assign(dev, { on: true, god: true });
+  const devGod = () => dev.on && dev.god;
+  const devLevel = () => (dev.on && dev.lvl ? dev.level : 1);
+  let devRun = false;   // this run uses a dev effect
+
+  const devEl = {};
+  ['devToggle', 'devTools', 'devGod', 'devLvl', 'lvlPick', 'lvlDown', 'lvlUp', 'lvlNum', 'lvlName', 'lvlSwatch', 'devTag', 'devBox']
+    .forEach((id) => { devEl[id] = document.getElementById(id); });
+  function renderDev() {
+    try { localStorage.setItem('orbit.dev', JSON.stringify(dev)); } catch (e) {}
+    const onOff = (b, label, on) => { b.textContent = label + ': ' + (on ? 'ON' : 'OFF'); b.setAttribute('aria-pressed', String(on)); };
+    onOff(devEl.devToggle, 'DEV MODE', dev.on);
+    onOff(devEl.devGod, 'GOD MODE', dev.god);
+    onOff(devEl.devLvl, 'LEVEL SELECT', dev.lvl);
+    devEl.devTools.classList.toggle('hidden', !dev.on);
+    devEl.lvlPick.classList.toggle('off', !dev.lvl);
+    devEl.lvlDown.disabled = devEl.lvlUp.disabled = !dev.lvl;
+    const ps = PLANET_STAGES[dev.level - 1];
+    devEl.lvlNum.textContent = dev.level;
+    devEl.lvlName.textContent = ps.label + (dev.level === LAST ? ' + BOSS' : '');
+    devEl.lvlSwatch.style.background = 'radial-gradient(circle at 35% 30%, ' + ps.core + ', ' + ps.mid + ' 60%, ' + ps.edge + ')';
+    devEl.lvlSwatch.style.boxShadow = '0 0 ' + Math.round(ps.glow / 3) + 'px ' + ps.core;
+  }
+  devEl.devToggle.addEventListener('click', () => { dev.on = !dev.on; renderDev(); });
+  devEl.devGod.addEventListener('click', () => { dev.god = !dev.god; renderDev(); });
+  devEl.devLvl.addEventListener('click', () => { dev.lvl = !dev.lvl; renderDev(); });
+  // the picker wraps round, so planet 20 (the boss) is one tap back from 1
+  const stepLevel = (d) => { dev.level = (dev.level - 1 + d + LAST) % LAST + 1; renderDev(); };
+  devEl.lvlDown.addEventListener('click', () => stepLevel(-1));
+  devEl.lvlUp.addEventListener('click', () => stepLevel(1));
+  renderDev();
 
   function start() {
     reset(false);
-    if (DEV_BOSS) {
-      // jump the clock to the last planet's threshold; the next frame does
-      // the usual planet-up (banner, upgrade, new song layer)
-      const th = STAGE_THRESH[difficulty];
-      elapsed = th[th.length - 1];
-      bossDelay = 3;
+    const lv = devLevel();
+    devRun = devGod() || lv > 1;
+    if (lv > 1) {
+      // jump the clock to that planet's threshold and hand over the upgrades
+      // the skipped planets would have paid out; the next frame does the
+      // usual planet-up (banner, one more upgrade, fanfare) for this one
+      elapsed = STAGE_THRESH[difficulty][lv - 1];
+      for (let i = 1; i < lv - 1; i++) grantItem(rollItem());
+      planetStage = lv - 2;
+      if (lv === LAST) bossDelay = 3;
     }
+    // a dev run can't set a best score, so its DEV tag takes BEST's spot
+    devEl.devTag.classList.toggle('hidden', !devRun);
+    document.getElementById('best').classList.toggle('hidden', devRun);
+    devEl.devTag.lastElementChild.textContent =
+      [devGod() && 'GOD', lv > 1 && 'P' + lv].filter(Boolean).join(' ');
     state = 'play';
     el.title.classList.add('hidden');
     el.over.classList.add('hidden');
     el.overlay.scrollTop = 0;
     ac();
     musicStart();
+    music.stage = planetStage;
   }
 
   function die() {
@@ -1011,6 +1111,7 @@
     shake = REDUCE ? 0 : 26 * u;
     flash = 1;
     musicStop(false);
+    if (boss) { boss.beam = null; boss.turrets.forEach((tu) => { tu.charging = false; }); }
     burst(px(), py(), REDUCE ? 16 : 46, '#FF9A3C', 320 * u);
     burst(px(), py(), REDUCE ? 8 : 22, '#FFE2B0', 180 * u);
     sfx.die();
@@ -1025,7 +1126,7 @@
   }
   function showResults() {
     const s = Math.floor(score);
-    if (s > best && !DEV_BOSS && !DEV_GOD) { best = s; try { localStorage.setItem('orbit.best', String(best)); } catch (e) {} }
+    if (s > best && !devRun) { best = s; try { localStorage.setItem('orbit.best', String(best)); } catch (e) {} }
     el.finalScore.textContent = s.toLocaleString();
     el.stTime.textContent = elapsed.toFixed(1) + 's';
     el.stSparks.textContent = sparkCount;
@@ -1036,7 +1137,9 @@
     el.stBuffs.textContent = buffCount;
     el.stBuffsAll.textContent = buffsAllTime.toLocaleString();
     el.over.classList.toggle('win', won);
-    el.overEyebrow.textContent = won ? 'MISSION COMPLETE' : 'ORBIT LOST';
+    el.overEyebrow.textContent = (won ? 'MISSION COMPLETE' : 'ORBIT LOST') + (devRun ? ' \u00b7 DEV RUN' : '');
+    // the dev controls follow you to the game-over screen
+    el.over.insertBefore(devEl.devBox, document.getElementById('againPrompt'));
     el.winLine.classList.toggle('hidden', !won);
     renderOverBuffs();
     el.titleBest.textContent = best.toLocaleString();
@@ -1120,7 +1223,7 @@
   // peel off a shield layer if there is one, otherwise end the run.
   // Returns 'grace', 'absorbed' or 'dead'.
   function takeHit(x, y) {
-    if (graceT > 0 || DEV_GOD) return 'grace';
+    if (graceT > 0 || devGod()) return 'grace';
     if (shields > 0) { shieldAbsorb(x, y); return 'absorbed'; }
     if (has('last') && !lastStandUsed) {
       // the save: clear the screen, slow time, and get a moment to breathe
@@ -1202,6 +1305,9 @@
     }
     if (boss.phase === 'fight') {
       boss.y = bossY() + Math.sin(boss.t * 1.3) * 4 * u;
+      // once you crash the fight is over: the mothership just idles, its
+      // countdown, turrets and beam frozen where they were
+      if (state !== 'play') return;
       // the countdown runs in real time: slow-mo slows the mothership, not the cannon
       boss.timer -= rdt;
       if (!boss.angry && boss.timer <= bc.time / 2) {
@@ -1249,9 +1355,11 @@
           sfx.beamFire();
           shake = Math.max(shake, REDUCE ? 0 : 6 * u);
         }
-        if (b.fired && Math.abs(angDiff(b.a, player.a)) < b.w) {
+        // each beam can cost at most one shield layer, like any other hit
+        if (b.fired && !b.hit && Math.abs(angDiff(b.a, player.a)) < b.w) {
           const res = takeHit(ppx, ppy);
           if (res === 'dead') return 'dead';
+          if (res === 'absorbed') b.hit = true;
         }
         if (b.t >= bc.warn + BEAM_BURN) {
           boss.beam = null;
@@ -2237,7 +2345,7 @@
   // centred captions for the finale, drawn on top of everything (and
   // outside the landing zoom)
   function drawFinaleText(t) {
-    if (!boss && !land) return;
+    if ((!boss && !land) || (state === 'over' && !won)) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.save();
