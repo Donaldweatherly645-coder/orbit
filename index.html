@@ -976,8 +976,21 @@
     shake = 0; flash = 0;
   }
 
+  // Dev mode: open the game with ?dev=boss to skip straight to the final
+  // planet, with the mothership arriving a few seconds in. For testing the
+  // ending; dev runs never touch your saved best score.
+  const DEV_BOSS = /[?&]dev=boss\b/.test(location.search);
+  if (DEV_BOSS) document.querySelector('#title .eyebrow').textContent = 'DEV MODE: SKIP TO BOSS';
+
   function start() {
     reset(false);
+    if (DEV_BOSS) {
+      // jump the clock to the last planet's threshold; the next frame does
+      // the usual planet-up (banner, upgrade, new song layer)
+      const th = STAGE_THRESH[difficulty];
+      elapsed = th[th.length - 1];
+      bossDelay = 3;
+    }
     state = 'play';
     el.title.classList.add('hidden');
     el.over.classList.add('hidden');
@@ -1008,7 +1021,7 @@
   }
   function showResults() {
     const s = Math.floor(score);
-    if (s > best) { best = s; try { localStorage.setItem('orbit.best', String(best)); } catch (e) {} }
+    if (s > best && !DEV_BOSS) { best = s; try { localStorage.setItem('orbit.best', String(best)); } catch (e) {} }
     el.finalScore.textContent = s.toLocaleString();
     el.stTime.textContent = elapsed.toFixed(1) + 's';
     el.stSparks.textContent = sparkCount;

@@ -51,6 +51,8 @@ Pick a difficulty from the title screen before launching. Every tier has its own
 
 Your best score is saved locally in your browser and shown on the title screen.
 
+**Testing the ending:** add `?dev=boss` to the address (for example `https://donaldweatherly645-coder.github.io/orbit/?dev=boss`) to start every run on the final planet, with the Mothership arriving a few seconds in. The title screen says DEV MODE, and dev runs never change your saved best score.
+
 ## Install it on your phone
 
 Orbit works as a Home Screen app: it gets its own icon, opens full screen with no browser bars, and keeps working offline.
