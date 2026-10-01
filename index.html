@@ -75,18 +75,33 @@
   #buffs .v{color:#FFD24C}
   #buffs.pop .v{animation:buffPop .6s cubic-bezier(.2,.7,.3,1)}
   @keyframes buffPop{0%{transform:scale(1.8); color:#fff} 100%{transform:scale(1)}}
-  #slowBadge{display:none}
-  #slowBadge.on{display:flex}
-  #slowBadge .v{color:#B79CFF}
-  /* upgrades collected this run */
+  /* buff tracker: every active power-up by name, with how long it has left */
   #items{
     position:absolute; left:0; right:0; bottom:0; z-index:2; pointer-events:none;
     display:flex; flex-wrap:wrap; justify-content:center; gap:6px;
     padding:10px 14px; padding-bottom:max(12px, env(safe-area-inset-bottom));
-    font-family:var(--mono); font-size:9px; letter-spacing:.16em;
+    font-family:var(--mono); letter-spacing:.14em;
   }
-  #items .chip{border:1px solid currentColor; padding:4px 7px; opacity:.8; background:rgba(7,10,20,.6)}
-  #items .chip.used{opacity:.3; text-decoration:line-through}
+  #items .buff{
+    width:112px; box-sizing:border-box; padding:5px 7px 6px;
+    border-left:2px solid currentColor; background:rgba(7,10,20,.72);
+    display:flex; flex-direction:column; gap:3px;
+  }
+  #items .buff .n{font-size:9px; letter-spacing:.08em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  #items .buff .s{font-size:11px; color:var(--ice); font-variant-numeric:tabular-nums; letter-spacing:.06em; white-space:nowrap}
+  #items .buff .bar{height:2px; background:rgba(168,203,230,.15); overflow:hidden}
+  #items .buff .bar i{display:block; height:100%; background:currentColor; transform-origin:left}
+  #items .buff.timed .s{color:#fff}
+  #items .buff.off{opacity:.35}
+  #items .buff.off .s{text-decoration:line-through}
+  /* game over: what you picked up this run */
+  #overBuffs{margin:18px 0 0}
+  #overBuffs .diffLabel{margin-top:0}
+  #overBuffs .list{display:flex; flex-wrap:wrap; justify-content:center; gap:6px}
+  #overBuffs .chip{
+    font-family:var(--mono); font-size:10px; letter-spacing:.14em;
+    border:1px solid currentColor; padding:5px 8px;
+  }
   #mute{
     pointer-events:auto; margin-left:14px; align-self:center;
     background:transparent; border:1px solid var(--line); color:var(--slate);
@@ -223,7 +238,6 @@
     <div class="read" id="best"><span class="k">BEST</span><span class="v">0</span></div>
     <div class="read" id="shieldBadge"><span class="k">SHIELD</span><span class="v">●</span></div>
     <div class="read" id="buffs"><span class="k">BUFFS</span><span class="v">0</span></div>
-    <div class="read" id="slowBadge"><span class="k">SLOW-MO</span><span class="v">3.0</span></div>
     <div class="read" id="combo"><span class="k">CHAIN</span><span class="v">x1</span></div>
     <button id="mute" type="button" aria-pressed="false">SOUND ON</button>
   </div>
@@ -263,6 +277,10 @@
         <div class="stat"><span class="k">PLANET</span><span class="v" id="stPlanet">DORMANT</span></div>
         <div class="stat"><span class="k">BUFFS</span><span class="v" id="stBuffs">0</span></div>
         <div class="stat"><span class="k">ALL-TIME BUFFS</span><span class="v" id="stBuffsAll">0</span></div>
+      </div>
+      <div id="overBuffs" class="hidden">
+        <p class="diffLabel">BUFFS COLLECTED</p>
+        <div class="list" id="overBuffsList"></div>
       </div>
       <p class="diffLabel">DIFFICULTY</p>
       <div class="diffs" role="group" aria-label="Difficulty" data-diffs>
@@ -306,9 +324,9 @@
     overlay: document.getElementById('overlay'),
     shieldBadge: document.getElementById('shieldBadge'),
     shieldV: document.querySelector('#shieldBadge .v'),
-    slowBadge: document.getElementById('slowBadge'),
+    overBuffs: document.getElementById('overBuffs'),
+    overBuffsList: document.getElementById('overBuffsList'),
     items: document.getElementById('items'),
-    slowV: document.querySelector('#slowBadge .v'),
   };
 
   /* ---------- geometry ---------- */
@@ -973,6 +991,7 @@
   let shake = 0, flash = 0, readyAt = 0, deathAt = -99;
   let shieldPickup = null, shields = 0, graceT = 0, shieldHitT = 0;
   let slowPickup = null, nextSlow = 0, slowT = 0, timeScale = 1, slowVis = 0;
+  let shieldsGot = 0, slowsGot = 0;   // pickups grabbed this run, for game over
   let planetStage = 0;
 
   const SPEED = 2.15;        // rad/s
@@ -1019,14 +1038,63 @@
     if (it.id === 'patch') shields = Math.min(SHIELD_MAX, shields + 1);
     if (it.id === 'moon') moon = { a: 0, cd: 0, x: 0, y: 0 };
     if (it.id === 'nova') novaT = NOVA_EVERY;
-    renderItems();
   }
+  const slowLen = () => has('chrono') ? 5 : SLOW_TIME;
+  const SLOW_COLOR = '#B79CFF';
+  // The buff tracker: one card per power-up you have right now, each with a
+  // status line and a bar. Timed ones count down; the rest say what they're
+  // up to (charging, ready, spent) or that they last the whole run.
+  function buffStatus(it) {
+    const n = owned[it.id];
+    switch (it.id) {
+      case 'patch': return { s: '+' + n + (n > 1 ? ' SHIELDS' : ' SHIELD'), f: 1 };
+      case 'echo': return { s: echoCount + '/10 MISSES', f: echoCount / 10 };
+      case 'nova': return { s: 'NEXT IN ' + Math.ceil(novaT) + 'S', f: novaT / NOVA_EVERY, timed: true };
+      case 'moon': return moon && moon.cd > 0
+        ? { s: 'CHARGE ' + moon.cd.toFixed(1) + 'S', f: 1 - moon.cd / MOON_COOLDOWN, timed: true }
+        : { s: 'READY', f: 1 };
+      case 'last': return lastStandUsed ? { s: 'SPENT', f: 0, off: true } : { s: 'READY', f: 1 };
+      default: return { s: 'ALL RUN', f: 1 };
+    }
+  }
+  let trackerKey = '', trackerRows = [];
   function renderItems() {
-    el.items.innerHTML = ITEMS.filter((it) => owned[it.id]).map((it) => {
-      const n = owned[it.id], used = it.id === 'last' && lastStandUsed;
-      return '<span class="chip' + (used ? ' used' : '') + '" style="color:' + RARITY[it.rarity].color + '">' +
-        it.name + (n > 1 ? ' x' + n : '') + '</span>';
-    }).join('');
+    const rows = [];
+    if (slowT > 0) rows.push({ key: 'slow', name: 'SLOW-MO', color: SLOW_COLOR,
+      s: slowT.toFixed(1) + 'S LEFT', f: slowT / slowLen(), timed: true });
+    for (const it of ITEMS) {
+      if (!owned[it.id]) continue;
+      rows.push(Object.assign({ key: it.id, color: RARITY[it.rarity].color,
+        name: it.name }, buffStatus(it)));
+    }
+    // only rebuild the cards when the set of buffs changes; otherwise just
+    // refresh their text and bars
+    const key = rows.map((r) => r.key).join('|');
+    if (key !== trackerKey) {
+      trackerKey = key;
+      el.items.innerHTML = rows.map((r) =>
+        '<div class="buff" style="color:' + r.color + '"><span class="n">' + r.name +
+        '</span><span class="s"></span><span class="bar"><i></i></span></div>').join('');
+      trackerRows = Array.from(el.items.children).map((c) =>
+        ({ c, s: c.querySelector('.s'), bar: c.querySelector('i'), text: null, f: null }));
+    }
+    rows.forEach((r, i) => {
+      const t = trackerRows[i], f = Math.max(0, Math.min(1, r.f));
+      if (t.text !== r.s) { t.text = r.s; t.s.textContent = r.s; }
+      if (t.f !== f) { t.f = f; t.bar.style.transform = 'scaleX(' + f.toFixed(3) + ')'; }
+      t.c.classList.toggle('timed', !!r.timed);
+      t.c.classList.toggle('off', !!r.off);
+    });
+  }
+  function renderOverBuffs() {
+    const chips = [];
+    const chip = (name, n, color) => chips.push('<span class="chip" style="color:' + color + '">' +
+      name + (n > 1 ? ' x' + n : '') + '</span>');
+    if (shieldsGot) chip('SHIELD', shieldsGot, '#6FE3FF');
+    if (slowsGot) chip('SLOW-MO', slowsGot, SLOW_COLOR);
+    for (const it of ITEMS) if (owned[it.id]) chip(it.name, owned[it.id], RARITY[it.rarity].color);
+    el.overBuffsList.innerHTML = chips.join('');
+    el.overBuffs.classList.toggle('hidden', !chips.length);
   }
   const pickR = () => SHIP + 15 * u * (has('magnet') ? 1.8 : 1);
   const ufoChargeTime = () => UFO_DIFF[difficulty].chargeTime * (has('jammer') ? 1.5 : 1);
@@ -1040,6 +1108,7 @@
     nextShield = 5 + Math.random() * 5;
     shieldPickup = null; shields = 0; graceT = 0; shieldHitT = 0;
     slowPickup = null; slowT = 0; timeScale = 1; slowVis = 0;
+    shieldsGot = 0; slowsGot = 0;
     owned = {}; novas = []; reward = null; hitStopT = 0;
     moon = null; echoCount = 0; novaT = 0; lastStandUsed = false;
     buffCount = 0; el.buffsV.textContent = '0';
@@ -1081,6 +1150,7 @@
     el.stPlanet.textContent = PLANET_STAGES[planetStage].label;
     el.stBuffs.textContent = buffCount;
     el.stBuffsAll.textContent = buffsAllTime.toLocaleString();
+    renderOverBuffs();
     el.titleBest.textContent = best.toLocaleString();
     el.overlay.scrollTop = 0;
     el.over.classList.remove('hidden');
@@ -1166,13 +1236,12 @@
     if (has('last') && !lastStandUsed) {
       // the save: clear the screen, slow time, and get a moment to breathe
       lastStandUsed = true;
-      renderItems();
       graceT = 1.6;
       flash = 1;
       novas.push({ r: R_PLANET, maxR: spawnR + 60, full: true, color: '#FFD24C' });
       float(px(), py() - 22 * u, 'LAST STAND', '#FFD24C');
       sfx.nova();
-      if (slowT <= 0) { slowT = has('chrono') ? 5 : SLOW_TIME; sfx.slowIn(); musicSlow(true); }
+      if (slowT <= 0) { slowT = slowLen(); sfx.slowIn(); musicSlow(true); }
       return 'absorbed';
     }
     die();
@@ -1379,7 +1448,7 @@
         const sx = cx + Math.cos(shieldPickup.a) * R_ORBIT, sy = cy + Math.sin(shieldPickup.a) * R_ORBIT;
         if (Math.hypot(sx - ppx, sy - ppy) < pickR()) {
           // a Hull Patch or Echo Shield can top you up while this pickup is out
-          shields = Math.min(SHIELD_MAX, shields + 1);
+          shields = Math.min(SHIELD_MAX, shields + 1); shieldsGot++;
           float(sx, sy - 20 * u, shields > 1 ? 'SHIELD x' + shields : 'SHIELD', '#6FE3FF');
           burst(sx, sy, 14, '#6FE3FF', 140 * u);
           sfx.shieldGet();
@@ -1401,7 +1470,7 @@
         slowPickup.life -= dt;
         const sx = cx + Math.cos(slowPickup.a) * R_ORBIT, sy = cy + Math.sin(slowPickup.a) * R_ORBIT;
         if (Math.hypot(sx - ppx, sy - ppy) < pickR()) {
-          slowT = has('chrono') ? 5 : SLOW_TIME;
+          slowT = slowLen(); slowsGot++;
           float(sx, sy - 20 * u, 'SLOW-MO', '#B79CFF');
           burst(sx, sy, 16, '#B79CFF', 150 * u);
           sfx.slowIn();
@@ -1530,8 +1599,7 @@
     el.shieldBadge.classList.toggle('on', playing && (shields > 0 || shieldHitT > 0));
     el.shieldBadge.classList.toggle('hit', shieldHitT > 0);
     el.shieldV.textContent = '●'.repeat(shields) + '○'.repeat(SHIELD_MAX - shields);
-    el.slowBadge.classList.toggle('on', playing && slowT > 0);
-    el.slowV.textContent = slowT.toFixed(1);
+    if (playing) renderItems();
     el.items.style.display = state === 'play' ? '' : 'none';
   }
 
