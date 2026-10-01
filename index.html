@@ -976,11 +976,15 @@
     shake = 0; flash = 0;
   }
 
-  // Dev mode: open the game with ?dev=boss to skip straight to the final
-  // planet, with the mothership arriving a few seconds in. For testing the
-  // ending; dev runs never touch your saved best score.
-  const DEV_BOSS = /[?&]dev=boss\b/.test(location.search);
-  if (DEV_BOSS) document.querySelector('#title .eyebrow').textContent = 'DEV MODE: SKIP TO BOSS';
+  // Dev mode, for testing the ending. Open the game with ?dev=boss to skip
+  // straight to the final planet, with the mothership arriving a few seconds
+  // in, and/or ?dev=god to make the ship invincible (hits pass straight
+  // through). Combine them as ?dev=boss,god. Dev runs never touch your saved
+  // best score.
+  const DEV = ((location.search.match(/[?&]dev=([^&]*)/) || [])[1] || '').toLowerCase().split(/,|%2c/);
+  const DEV_BOSS = DEV.includes('boss'), DEV_GOD = DEV.includes('god');
+  if (DEV_BOSS || DEV_GOD) document.querySelector('#title .eyebrow').textContent =
+    'DEV MODE: ' + [DEV_BOSS && 'SKIP TO BOSS', DEV_GOD && 'GOD MODE'].filter(Boolean).join(' + ');
 
   function start() {
     reset(false);
@@ -1021,7 +1025,7 @@
   }
   function showResults() {
     const s = Math.floor(score);
-    if (s > best && !DEV_BOSS) { best = s; try { localStorage.setItem('orbit.best', String(best)); } catch (e) {} }
+    if (s > best && !DEV_BOSS && !DEV_GOD) { best = s; try { localStorage.setItem('orbit.best', String(best)); } catch (e) {} }
     el.finalScore.textContent = s.toLocaleString();
     el.stTime.textContent = elapsed.toFixed(1) + 's';
     el.stSparks.textContent = sparkCount;
@@ -1116,7 +1120,7 @@
   // peel off a shield layer if there is one, otherwise end the run.
   // Returns 'grace', 'absorbed' or 'dead'.
   function takeHit(x, y) {
-    if (graceT > 0) return 'grace';
+    if (graceT > 0 || DEV_GOD) return 'grace';
     if (shields > 0) { shieldAbsorb(x, y); return 'absorbed'; }
     if (has('last') && !lastStandUsed) {
       // the save: clear the screen, slow time, and get a moment to breathe
