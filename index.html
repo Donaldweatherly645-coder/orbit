@@ -95,6 +95,10 @@
   #items .buff.off{opacity:.35}
   #items .buff.off .s{text-decoration:line-through}
   /* game over: what you picked up this run */
+  /* victory: the game-over panel, in gold */
+  #over.win .eyebrow{color:#FFD24C}
+  #over.win .final{color:#FFD24C; text-shadow:0 0 24px rgba(255,210,76,.45)}
+  .winLine{font-family:var(--mono); font-size:11px; letter-spacing:.18em; color:#FFE9A8; margin:-6px 0 18px}
   #overBuffs{margin:18px 0 0}
   #overBuffs .diffLabel{margin-top:0}
   #overBuffs .list{display:flex; flex-wrap:wrap; justify-content:center; gap:6px}
@@ -266,8 +270,9 @@
     </div>
 
     <div class="panel hidden" id="over">
-      <p class="eyebrow">ORBIT LOST</p>
+      <p class="eyebrow" id="overEyebrow">ORBIT LOST</p>
       <p class="final" id="finalScore">0</p>
+      <p class="winLine hidden" id="winLine">MOTHERSHIP DESTROYED &middot; SHIP LANDED</p>
       <div class="stats">
         <div class="stat"><span class="k">TIME ALOFT</span><span class="v" id="stTime">0.0s</span></div>
         <div class="stat"><span class="k">SPARKS</span><span class="v" id="stSparks">0</span></div>
@@ -310,6 +315,8 @@
     title: document.getElementById('title'),
     over: document.getElementById('over'),
     finalScore: document.getElementById('finalScore'),
+    overEyebrow: document.getElementById('overEyebrow'),
+    winLine: document.getElementById('winLine'),
     stTime: document.getElementById('stTime'),
     stSparks: document.getElementById('stSparks'),
     stNear: document.getElementById('stNear'),
@@ -437,6 +444,18 @@
     },
     nova: () => { tone(90, 40, 0.5, 'sine', 0.16); hiss(0.4, 0.06); },
     moonHit: () => tone(900, 300, 0.12, 'square', 0.05),
+    // the mothership: a low siren on arrival, a hum before each beam
+    bossSiren: () => { tone(180, 360, 0.6, 'sawtooth', 0.07); tone(360, 180, 0.6, 'sawtooth', 0.05); },
+    beamWarn:  () => tone(220, 260, 0.3, 'square', 0.04),
+    beamFire:  () => { tone(140, 60, 0.6, 'sawtooth', 0.1); hiss(0.5, 0.07); },
+    laser:     () => { tone(60, 900, 1.0, 'sawtooth', 0.12); hiss(1.0, 0.08); },
+    boom:      () => { hiss(1.4, 0.28); tone(120, 30, 1.4, 'sawtooth', 0.16); },
+    victory:   () => {
+      chime([330, 415, 494, 659], 0.11, 0, 'triangle', 0.09);
+      chime([659, 831, 988, 1319], 0.11, 0.5, 'triangle', 0.08);
+      chime([1319, 1661, 1976, 2637], 0.07, 1.0, 'sine', 0.05);
+    },
+    touchdown: () => { tone(200, 70, 0.4, 'sine', 0.12); chime([494, 659, 988], 0.09, 0.15, 'triangle', 0.07); },
   };
   /* ---------- music ---------- */
   // The soundtrack is a recorded song, "Crossing the Meteor Belt" (C minor),
@@ -656,7 +675,7 @@
   document.addEventListener('visibilitychange', () => {
     if (!actx) return;
     if (document.hidden) actx.suspend();
-    else if (state === 'play') actx.resume();
+    else if (state === 'play' || state === 'finale') actx.resume();
   });
 
   el.mute.addEventListener('click', () => {
@@ -698,6 +717,27 @@
   // for SLOW_TIME seconds, then eases time back to full speed
   const SLOW_DIFF = { easy: 32, normal: 28, hard: 24, extreme: 20 };
   const SLOW_TIME = 3, SLOW_SCALE = 0.4;
+
+  // The finale. A few seconds after the planet reaches its final form, the
+  // UFOs' mothership arrives and parks above the orbit. You can't shoot it:
+  // the planet is charging a cannon, and you have to outlast the mothership
+  // until the charge is full (time: seconds). Its four turrets charge and
+  // fire aimed shots like the UFOs do, and every few seconds it paints a red
+  // arc on the orbit where you're heading and then burns it with a beam --
+  // flip away before it fires. Halfway through it gets angrier: everything
+  // comes faster. When the charge is full the planet fires a giant laser,
+  // the mothership blows apart, and your ship flies down and lands.
+  // fireEvery/beamEvery are [min,max] second ranges; arc is the beam's
+  // half-width in radians; cadence stretches the gap between debris.
+  const BOSS_DIFF = {
+    easy:    { time: 45, fireEvery: [2.8, 3.8], beamEvery: [6.5, 8.5], warn: 1.4,  arc: 0.42, cadence: 2.2 },
+    normal:  { time: 60, fireEvery: [2.2, 3.2], beamEvery: [5, 7],     warn: 1.15, arc: 0.48, cadence: 1.9 },
+    hard:    { time: 60, fireEvery: [1.7, 2.5], beamEvery: [4, 5.5],   warn: 1.0,  arc: 0.52, cadence: 1.7 },
+    extreme: { time: 70, fireEvery: [1.3, 1.9], beamEvery: [3.2, 4.5], warn: 0.85, arc: 0.56, cadence: 1.5 },
+  };
+  const BOSS_DELAY = 8, BOSS_ARRIVE = 3.2, BEAM_BURN = 0.7, ENRAGE = 0.75;
+  const LASER_CHARGE = 0.9, LASER_BOOM = 2.0, LASER_END = 3.8, LAND_TIME = 4.2, LAND_HOLD = 2.2;
+  const BOSS_BONUS = 2500, SHIELD_BONUS = 500;
 
   // planet progression: the planet visibly transforms through 20 stages the
   // longer you survive -- geological, then crystalline/bioluminescent, then
@@ -792,7 +832,7 @@
   setDifficulty(difficulty);
 
   /* ---------- state ---------- */
-  let state = 'menu';        // menu | play | over
+  let state = 'menu';        // menu | play | finale | over
   let best = 0;
   try { best = parseInt(localStorage.getItem('orbit.best') || '0', 10) || 0; } catch (e) {}
   // buffs (planet upgrades) collected this run, and across every run
@@ -808,6 +848,8 @@
   let slowPickup = null, nextSlow = 0, slowT = 0, timeScale = 1, slowVis = 0;
   let shieldsGot = 0, slowsGot = 0;   // pickups grabbed this run, for game over
   let planetStage = 0;
+  // finale: the mothership fight, then the planet laser and the landing
+  let boss = null, bossDelay = BOSS_DELAY, land = null, won = false, shipRad = 0;
 
   const SPEED = 2.15;        // rad/s
 
@@ -930,11 +972,25 @@
     renderItems();
     nextSlow = SLOW_DIFF[difficulty] * (0.6 + Math.random() * 0.4);
     planetStage = 0;
+    boss = null; bossDelay = BOSS_DELAY; land = null; won = false; shipRad = 0;
     shake = 0; flash = 0;
   }
 
+  // Dev mode: open the game with ?dev=boss to skip straight to the final
+  // planet, with the mothership arriving a few seconds in. For testing the
+  // ending; dev runs never touch your saved best score.
+  const DEV_BOSS = /[?&]dev=boss\b/.test(location.search);
+  if (DEV_BOSS) document.querySelector('#title .eyebrow').textContent = 'DEV MODE: SKIP TO BOSS';
+
   function start() {
     reset(false);
+    if (DEV_BOSS) {
+      // jump the clock to the last planet's threshold; the next frame does
+      // the usual planet-up (banner, upgrade, new song layer)
+      const th = STAGE_THRESH[difficulty];
+      elapsed = th[th.length - 1];
+      bossDelay = 3;
+    }
     state = 'play';
     el.title.classList.add('hidden');
     el.over.classList.add('hidden');
@@ -954,8 +1010,18 @@
     burst(px(), py(), REDUCE ? 16 : 46, '#FF9A3C', 320 * u);
     burst(px(), py(), REDUCE ? 8 : 22, '#FFE2B0', 180 * u);
     sfx.die();
+    showResults();
+  }
+  // the landing is done: same results panel as a crash, dressed in gold
+  function victory() {
+    state = 'over';
+    won = true;
+    readyAt = performance.now() + 900;
+    showResults();
+  }
+  function showResults() {
     const s = Math.floor(score);
-    if (s > best) { best = s; try { localStorage.setItem('orbit.best', String(best)); } catch (e) {} }
+    if (s > best && !DEV_BOSS) { best = s; try { localStorage.setItem('orbit.best', String(best)); } catch (e) {} }
     el.finalScore.textContent = s.toLocaleString();
     el.stTime.textContent = elapsed.toFixed(1) + 's';
     el.stSparks.textContent = sparkCount;
@@ -965,14 +1031,18 @@
     el.stPlanet.textContent = PLANET_STAGES[planetStage].label;
     el.stBuffs.textContent = buffCount;
     el.stBuffsAll.textContent = buffsAllTime.toLocaleString();
+    el.over.classList.toggle('win', won);
+    el.overEyebrow.textContent = won ? 'MISSION COMPLETE' : 'ORBIT LOST';
+    el.winLine.classList.toggle('hidden', !won);
     renderOverBuffs();
     el.titleBest.textContent = best.toLocaleString();
     el.overlay.scrollTop = 0;
     el.over.classList.remove('hidden');
   }
 
-  const px = () => cx + Math.cos(player.a) * R_ORBIT;
-  const py = () => cy + Math.sin(player.a) * R_ORBIT;
+  // shipRad is only set during the landing, when the ship leaves its orbit
+  const px = () => cx + Math.cos(player.a) * (shipRad || R_ORBIT);
+  const py = () => cy + Math.sin(player.a) * (shipRad || R_ORBIT);
 
   /* ---------- input ---------- */
   function press(e) {
@@ -1087,6 +1157,183 @@
     floats.push({ x, y, text, color, life: 0.9 });
   }
 
+  /* ---------- the mothership ---------- */
+  // angle from a to b, wrapped to -PI..PI
+  const angDiff = (a, b) => ((b - a) % 6.2832 + 9.4248) % 6.2832 - 3.1416;
+  const bossRX = () => Math.min(W * 0.4, 190 * u);
+  const bossY = () => Math.max(cy - R_ORBIT - 30 * u - bossRX() * 0.36, 96 + bossRX() * 0.42);
+  const randIn = (r) => r[0] + Math.random() * (r[1] - r[0]);
+  // the four turrets along the hull's underside, as fractions of its width
+  const TURRETS = [-0.72, -0.26, 0.26, 0.72];
+  function turretPos(i) {
+    const rx = bossRX();
+    return { x: boss.x + TURRETS[i] * rx, y: boss.y + rx * 0.2 };
+  }
+
+  function spawnBoss() {
+    const bc = BOSS_DIFF[difficulty];
+    boss = {
+      phase: 'arrive', t: 0, x: cx, y: -200 * u,
+      timer: bc.time, angry: false, hitT: 0,
+      turrets: TURRETS.map((_, i) => ({ fireT: 1 + i * 0.7, charging: false, chargeT: 0 })),
+      beam: null, nextBeam: bc.beamEvery[0],
+    };
+    // sweep the scouts away so it's just you and the big one
+    novas.push({ r: R_PLANET, maxR: spawnR + 60, full: true, color: '#7CFFC2' });
+    sfx.bossSiren();
+    shake = Math.max(shake, REDUCE ? 0 : 8 * u);
+  }
+
+  function updateBoss(rdt, dt, ppx, ppy) {
+    const bc = BOSS_DIFF[difficulty];
+    boss.t += rdt;
+    boss.hitT = Math.max(0, boss.hitT - rdt);
+    boss.x = cx;
+    if (boss.phase === 'arrive') {
+      // glide down from above the screen, easing in to its parking spot
+      const k = Math.min(1, boss.t / BOSS_ARRIVE);
+      boss.y = -200 * u + (bossY() + 200 * u) * (1 - Math.pow(1 - k, 3));
+      if (k >= 1) { boss.phase = 'fight'; boss.t = 0; }
+      return;
+    }
+    if (boss.phase === 'fight') {
+      boss.y = bossY() + Math.sin(boss.t * 1.3) * 4 * u;
+      // the countdown runs in real time: slow-mo slows the mothership, not the cannon
+      boss.timer -= rdt;
+      if (!boss.angry && boss.timer <= bc.time / 2) {
+        boss.angry = true;
+        float(cx, boss.y + bossRX() * 0.5, 'MOTHERSHIP ENRAGED', '#FF4D5E');
+        sfx.bossSiren();
+      }
+      if (boss.timer <= 0) { fireCannon(); return; }
+      const rate = boss.angry ? ENRAGE : 1;
+
+      // turrets: charge, then fire an aimed shot, just like a UFO
+      const uc = UFO_DIFF[difficulty];
+      const spd = uc.shotSpeed * u * (has('damper') ? 0.88 : 1);
+      boss.turrets.forEach((tu, i) => {
+        if (tu.charging) {
+          tu.chargeT += dt;
+          if (tu.chargeT >= ufoChargeTime()) {
+            const tp = turretPos(i);
+            const ang = Math.atan2(ppy - tp.y, ppx - tp.x);
+            shots.push({ x: tp.x, y: tp.y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd });
+            sfx.ufoFire();
+            tu.charging = false;
+            tu.fireT = randIn(bc.fireEvery) * rate * (has('jammer') ? 1.4 : 1) * TURRETS.length / 2;
+          }
+        } else {
+          tu.fireT -= dt;
+          if (tu.fireT <= 0) { tu.charging = true; tu.chargeT = 0; }
+        }
+      });
+
+      // beam: paint an arc where you'll be if you don't flip, then burn it
+      if (!boss.beam) {
+        boss.nextBeam -= dt;
+        if (boss.nextBeam <= 0) {
+          const ahead = SPEED * (bc.warn + BEAM_BURN * 0.4);
+          boss.beam = { a: player.a + player.dir * ahead + (Math.random() - 0.5) * 0.3,
+            w: bc.arc * (boss.angry ? 1.15 : 1), t: 0, fired: false };
+          sfx.beamWarn();
+        }
+      } else {
+        const b = boss.beam;
+        b.t += dt;
+        if (!b.fired && b.t >= bc.warn) {
+          b.fired = true;
+          sfx.beamFire();
+          shake = Math.max(shake, REDUCE ? 0 : 6 * u);
+        }
+        if (b.fired && Math.abs(angDiff(b.a, player.a)) < b.w) {
+          const res = takeHit(ppx, ppy);
+          if (res === 'dead') return 'dead';
+        }
+        if (b.t >= bc.warn + BEAM_BURN) {
+          boss.beam = null;
+          boss.nextBeam = randIn(bc.beamEvery) * rate;
+        }
+      }
+      return;
+    }
+    if (boss.phase === 'laser') {
+      boss.y = bossY();
+      const lt = boss.t;
+      if (lt >= LASER_CHARGE && !boss.lasered) {
+        boss.lasered = true;
+        sfx.laser();
+        flash = Math.max(flash, 0.4);
+      }
+      if (boss.lasered && !boss.blown) {
+        boss.hitT = 0.1;
+        shake = Math.max(shake, REDUCE ? 0 : 7 * u);
+        if (Math.random() < 0.5) {
+          const rx = bossRX();
+          burst(boss.x + (Math.random() - 0.5) * rx * 1.6, boss.y + (Math.random() - 0.5) * rx * 0.3,
+            REDUCE ? 3 : 8, Math.random() < 0.5 ? '#FFD24C' : '#FF6A3C', 160 * u);
+        }
+      }
+      if (lt >= LASER_BOOM && !boss.blown) {
+        boss.blown = true;
+        const rx = bossRX();
+        for (let i = 0; i < 6; i++) {
+          burst(boss.x + (i / 5 - 0.5) * rx * 1.6, boss.y, REDUCE ? 10 : 40,
+            ['#FFD24C', '#FF6A3C', '#7CFFC2', '#FFFFFF'][i % 4], 380 * u);
+        }
+        shake = REDUCE ? 0 : 30 * u;
+        flash = 1;
+        sfx.boom();
+        sfx.victory();
+        const bonus = BOSS_BONUS + shields * SHIELD_BONUS;
+        score += bonus;
+        float(cx, boss.y, 'MOTHERSHIP DOWN  +' + bonus.toLocaleString(), '#FFD24C');
+      }
+      if (lt >= LASER_END) startLanding();
+    }
+  }
+
+  // the cannon is charged: freeze the fight and hand over to the cutscene
+  function fireCannon() {
+    state = 'finale';
+    boss.phase = 'laser'; boss.t = 0; boss.beam = null;
+    slowT = 0; graceT = 0;
+    shots = []; sparks = []; shieldPickup = null; slowPickup = null;
+    novas.push({ r: R_PLANET, maxR: spawnR + 60, full: true, color: '#FFD24C' });
+    musicStop(false);
+  }
+
+  // fly in from the orbit, spiral down and set down on top of the planet
+  function startLanding() {
+    boss = null;
+    const target = -Math.PI / 2;
+    let d = ((target - player.a) * player.dir % 6.2832 + 6.2832) % 6.2832;
+    if (d < 2) d += 6.2832;
+    land = { t: 0, a0: player.a, d, dir: player.dir, down: false };
+    player.trail.length = 0;
+  }
+  const easeInOut = (k) => k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+  function updateLanding(rdt) {
+    land.t += rdt;
+    const k = Math.min(1, land.t / LAND_TIME);
+    player.a = land.a0 + land.dir * land.d * (1 - Math.pow(1 - k, 3));
+    shipRad = R_ORBIT + (R_PLANET + SHIP * 1.1 - R_ORBIT) * easeInOut(k);
+    if (k < 1) {
+      // engine glow puffing out behind the ship as it descends
+      const tail = player.a - land.dir * 0.08;
+      if (Math.random() < 0.7) parts.push({
+        x: cx + Math.cos(tail) * shipRad, y: cy + Math.sin(tail) * shipRad,
+        vx: (Math.random() - 0.5) * 30 * u, vy: (Math.random() - 0.5) * 30 * u,
+        life: 0.4, max: 1, r: 2 * u, color: '#FF9A3C',
+      });
+    } else if (!land.down) {
+      land.down = true;
+      const lx = cx, ly = cy - R_PLANET;
+      burst(lx, ly, REDUCE ? 8 : 26, '#E8EBFF', 90 * u);
+      sfx.touchdown();
+    }
+    if (land.t >= LAND_TIME + LAND_HOLD && state === 'finale') victory();
+  }
+
   /* ---------- update ---------- */
   function recentre(dt) {
     const target = state === 'menu' ? H * 0.38 : H / 2;
@@ -1116,7 +1363,8 @@
     if (playing) { elapsed += rdt; score += rdt * 8; }
     if (playing) musicTick();
 
-    player.a += SPEED * player.dir * rdt;
+    if (land) updateLanding(rdt);
+    else player.a += SPEED * player.dir * rdt;
     const ppx = px(), ppy = py();
     player.trail.push({ x: ppx, y: ppy });
     if (player.trail.length > 26) player.trail.shift();
@@ -1135,8 +1383,9 @@
           spawnDebris(false);
           extra++;
         }
-        nextDebris = Math.max(d0.cadenceFloor, d0.cadenceBase - elapsed * d0.cadenceRamp);
-      } else {
+        nextDebris = Math.max(d0.cadenceFloor, d0.cadenceBase - elapsed * d0.cadenceRamp) *
+          (boss ? BOSS_DIFF[difficulty].cadence : 1);
+      } else if (state !== 'finale') {
         spawnDebris(true);
         nextDebris = 1.4;
       }
@@ -1186,7 +1435,7 @@
     if (playing) {
       const uc = UFO_DIFF[difficulty];
       nextUFO -= dt;
-      if (nextUFO <= 0 && ufos.length < uc.maxAlive) {
+      if (nextUFO <= 0 && ufos.length < uc.maxAlive && !boss) {
         spawnUFO();
         nextUFO = uc.spawnEvery[0] + Math.random() * (uc.spawnEvery[1] - uc.spawnEvery[0]);
       }
@@ -1352,6 +1601,13 @@
       }
     }
 
+    // the finale: the mothership turns up once the final planet has settled in
+    if (playing && !boss && planetStage === PLANET_STAGES.length - 1) {
+      bossDelay -= rdt;
+      if (bossDelay <= 0) spawnBoss();
+    }
+    if (boss && updateBoss(rdt, dt, ppx, ppy) === 'dead') return;
+
     // shockwaves: sweep outward from the planet, erasing hazards they pass
     for (let n = novas.length - 1; n >= 0; n--) {
       const nv = novas[n];
@@ -1462,6 +1718,13 @@
     if (shake > 0.4) {
       ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
     }
+    // the landing cutscene: the camera zooms in on the top of the planet
+    // as the ship comes down to it
+    if (land) {
+      const e = easeInOut(Math.min(1, land.t / LAND_TIME));
+      const z = 1 + 1.4 * e, fy = cy - R_PLANET * e;
+      ctx.translate(cx, cy); ctx.scale(z, z); ctx.translate(-cx, -fy);
+    }
 
     // starfield, slow rotation about the planet
     const drift = t * 0.012;
@@ -1498,6 +1761,42 @@
           ? 'rgba(255,77,94,' + (k * 0.95).toFixed(3) + ')'
           : 'rgba(168,203,230,' + (k * 0.5).toFixed(3) + ')');
       ctx.beginPath(); ctx.arc(cx, cy, R_ORBIT, a - w, a + w); ctx.stroke();
+    }
+
+    // mothership beam: a blinking dashed warning arc, then the burn
+    if (boss && boss.beam) {
+      const b = boss.beam, bc = BOSS_DIFF[difficulty];
+      ctx.save();
+      if (!b.fired) {
+        const k = b.t / bc.warn;
+        ctx.globalAlpha = (0.45 + 0.55 * k) * (Math.floor(t * (6 + k * 10)) % 2 ? 1 : 0.55);
+        ctx.strokeStyle = '#FF4D5E';
+        ctx.lineWidth = (4 + 4 * k) * u;
+        ctx.setLineDash([6 * u, 5 * u]);
+        ctx.beginPath(); ctx.arc(cx, cy, R_ORBIT, b.a - b.w, b.a + b.w); ctx.stroke();
+        ctx.setLineDash([]);
+        // aim lines from the hull to the ends of the arc
+        ctx.globalAlpha = 0.25 + 0.35 * k;
+        ctx.lineWidth = 1 * u;
+        for (const e of [b.a - b.w, b.a + b.w]) {
+          ctx.beginPath(); ctx.moveTo(boss.x, boss.y);
+          ctx.lineTo(cx + Math.cos(e) * R_ORBIT, cy + Math.sin(e) * R_ORBIT); ctx.stroke();
+        }
+      } else {
+        // a burning wedge from the hull onto the orbit
+        const f = 1 - (b.t - bc.warn) / BEAM_BURN;
+        ctx.globalAlpha = 0.35 + 0.4 * f;
+        ctx.fillStyle = '#FF4D5E';
+        ctx.beginPath(); ctx.moveTo(boss.x, boss.y);
+        ctx.arc(cx, cy, R_ORBIT + 10 * u, b.a - b.w, b.a + b.w);
+        ctx.closePath(); ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.shadowColor = '#FF4D5E'; ctx.shadowBlur = 22 * u;
+        ctx.strokeStyle = '#FFE2E5';
+        ctx.lineWidth = (6 + 6 * f) * u;
+        ctx.beginPath(); ctx.arc(cx, cy, R_ORBIT, b.a - b.w, b.a + b.w); ctx.stroke();
+      }
+      ctx.restore();
     }
 
     // planet -- palette, rings, moons and corona all follow the current
@@ -1559,6 +1858,22 @@
       ctx.arc(mx, my, (2 + i * 0.3) * u, 0, 6.2832);
       ctx.fillStyle = ps.core;
       ctx.fill();
+    }
+
+    // the planet cannon: a gold glow that builds as the countdown runs down
+    if (boss && boss.phase !== 'arrive') {
+      const bc = BOSS_DIFF[difficulty];
+      const k = boss.phase === 'fight' ? 1 - boss.timer / bc.time : 1;
+      const pulse = 0.75 + 0.25 * Math.sin(t * (4 + k * 10));
+      ctx.save();
+      ctx.globalAlpha = (0.25 + 0.6 * k) * pulse;
+      ctx.strokeStyle = '#FFD24C';
+      ctx.shadowColor = '#FFD24C'; ctx.shadowBlur = 20 * u * k;
+      ctx.lineWidth = (2 + 3 * k) * u;
+      ctx.beginPath();
+      ctx.arc(cx, cy, R_PLANET + 7 * u, -Math.PI / 2, -Math.PI / 2 + 6.2832 * k);
+      ctx.stroke();
+      ctx.restore();
     }
 
     // sparks
@@ -1679,6 +1994,8 @@
       ctx.restore();
     }
 
+    if (boss) drawBoss(t);
+
     // UFO shots
     for (const s of shots) {
       const len = Math.hypot(s.vx, s.vy) || 1;
@@ -1708,7 +2025,7 @@
     }
 
     // ship
-    if (state !== 'over' || now - deathAt < 80) {
+    if (state !== 'over' || now - deathAt < 80 || won) {
       const ppx = px(), ppy = py();
       ctx.save();
       ctx.translate(ppx, ppy);
@@ -1729,7 +2046,10 @@
         ctx.beginPath(); ctx.arc(0, 0, SHIP * (2.2 + (1 - f) * 2.5), 0, 6.2832); ctx.stroke();
         ctx.setLineDash([]);
       }
-      ctx.rotate(player.a + player.dir * Math.PI / 2);
+      let rot = player.a + player.dir * Math.PI / 2;
+      // touching down: the nose swings round from flying to pointing up
+      if (land) rot += angDiff(rot, player.a) * Math.max(0, Math.min(1, (land.t / LAND_TIME - 0.6) / 0.4));
+      ctx.rotate(rot);
       ctx.shadowColor = '#FF9A3C'; ctx.shadowBlur = 16 * u;
       ctx.fillStyle = '#FF9A3C';
       ctx.beginPath();
@@ -1828,9 +2148,140 @@
       ctx.fillRect(-40, -40, W + 80, H + 80);
     }
     if (flash > 0.01) {
-      ctx.fillStyle = 'rgba(255,77,94,' + (flash * 0.32).toFixed(3) + ')';
+      // red for a hit, white-gold for the planet cannon
+      ctx.fillStyle = (state === 'finale' || won ? 'rgba(255,240,200,' : 'rgba(255,77,94,') + (flash * 0.32).toFixed(3) + ')';
       ctx.fillRect(-40, -40, W + 80, H + 80);
     }
+    drawFinaleText(t);
+  }
+
+  function drawBoss(t) {
+    const rx = bossRX(), ry = rx * 0.26;
+    const jx = boss.hitT > 0 ? (Math.random() - 0.5) * 6 * u : 0;
+    const angry = boss.angry || boss.phase === 'laser';
+    const glow = angry ? '#FF4D5E' : '#7CFFC2';
+    if (boss.blown) return;
+    ctx.save();
+    ctx.translate(boss.x + jx, boss.y);
+    // turret pods hang underneath
+    boss.turrets.forEach((tu, i) => {
+      const x = TURRETS[i] * rx, y = rx * 0.2;
+      ctx.fillStyle = '#1A2B24';
+      ctx.strokeStyle = glow; ctx.lineWidth = 1.2 * u;
+      ctx.beginPath(); ctx.arc(x, y - 2 * u, 6 * u, 0, Math.PI); ctx.fill(); ctx.stroke();
+      if (tu.charging) {
+        const k = Math.min(1, tu.chargeT / (ufoChargeTime() || 0.5));
+        ctx.shadowColor = '#FFE2B0'; ctx.shadowBlur = 16 * u * k;
+        ctx.fillStyle = '#FFE2B0';
+        ctx.beginPath(); ctx.arc(x, y + 3 * u, 2.6 * u * (0.4 + k * 0.8), 0, 6.2832); ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+    });
+    // hull
+    ctx.shadowColor = glow; ctx.shadowBlur = 18 * u;
+    ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, 6.2832);
+    const hg = ctx.createLinearGradient(0, -ry, 0, ry);
+    hg.addColorStop(0, '#3C5C50'); hg.addColorStop(1, '#14211C');
+    ctx.fillStyle = hg; ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = glow; ctx.lineWidth = 1.6 * u; ctx.stroke();
+    // a second, inner rim
+    ctx.strokeStyle = 'rgba(124,255,194,.25)';
+    ctx.beginPath(); ctx.ellipse(0, ry * 0.15, rx * 0.8, ry * 0.5, 0, 0, 6.2832); ctx.stroke();
+    // dome
+    const dg = ctx.createRadialGradient(-rx * 0.08, -ry * 1.5, 1, 0, -ry * 0.6, rx * 0.4);
+    dg.addColorStop(0, angry ? '#FFE4E7' : '#E4FFF1');
+    dg.addColorStop(1, angry ? '#C93A4A' : '#4FCB94');
+    ctx.beginPath(); ctx.ellipse(0, -ry * 0.6, rx * 0.34, ry * 1.25, 0, Math.PI, 0);
+    ctx.fillStyle = dg; ctx.fill();
+    // running lights chasing round the rim
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * 6.2832 + t * (angry ? 3 : 1.2);
+      const lx = Math.cos(a) * rx * 0.9, ly = Math.sin(a) * ry * 0.75;
+      ctx.globalAlpha = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(t * 6 + i));
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(lx, ly, 1.8 * u, 0, 6.2832); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    // the planet laser: a thin aiming line, then a giant beam into the hull
+    if (boss.phase === 'laser') {
+      const top = cy - R_PLANET, bot = boss.y;
+      const k = Math.min(1, boss.t / LASER_CHARGE);
+      ctx.save();
+      if (!boss.lasered) {
+        ctx.globalAlpha = 0.4 + 0.6 * k;
+        ctx.strokeStyle = '#FFF2C0'; ctx.lineWidth = (1 + 2 * k) * u;
+        ctx.beginPath(); ctx.moveTo(cx, top); ctx.lineTo(cx, bot); ctx.stroke();
+      } else {
+        const w = (26 + Math.sin(t * 40) * 4) * u * Math.min(1, (LASER_END - boss.t) / 0.3 + 0.2);
+        const lg = ctx.createLinearGradient(cx - w, 0, cx + w, 0);
+        lg.addColorStop(0, 'rgba(255,210,76,0)');
+        lg.addColorStop(0.3, 'rgba(255,210,76,.85)');
+        lg.addColorStop(0.5, '#FFFFFF');
+        lg.addColorStop(0.7, 'rgba(255,210,76,.85)');
+        lg.addColorStop(1, 'rgba(255,210,76,0)');
+        ctx.fillStyle = lg;
+        ctx.shadowColor = '#FFD24C'; ctx.shadowBlur = 30 * u;
+        ctx.fillRect(cx - w, bot, w * 2, top - bot);
+      }
+      ctx.restore();
+    }
+  }
+
+  // centred captions for the finale, drawn on top of everything (and
+  // outside the landing zoom)
+  function drawFinaleText(t) {
+    if (!boss && !land) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.save();
+    ctx.textAlign = 'center';
+    const below = cy + R_ORBIT + 40 * u;
+    const big = (n) => '700 ' + Math.max(18, Math.round(n * u)) + 'px Oxanium, "Trebuchet MS", sans-serif';
+    const small = (n) => '500 ' + Math.max(10, Math.round(n * u)) + 'px "IBM Plex Mono", monospace';
+    if (boss && boss.phase === 'arrive') {
+      ctx.globalAlpha = Math.floor(t * 4) % 2 ? 1 : 0.55;
+      ctx.fillStyle = '#FF4D5E';
+      ctx.shadowColor = '#FF4D5E'; ctx.shadowBlur = 14 * u;
+      ctx.font = big(30);
+      ctx.fillText('WARNING: MOTHERSHIP', cx, below);
+      ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+      ctx.fillStyle = '#FFE9A8';
+      ctx.font = small(12);
+      ctx.fillText('SURVIVE UNTIL THE PLANET CANNON CHARGES', cx, below + 24 * u);
+    } else if (boss && boss.phase === 'fight') {
+      const bc = BOSS_DIFF[difficulty];
+      const left = Math.max(0, boss.timer), k = 1 - left / bc.time;
+      const bw = Math.max(160, 220 * u), bh = Math.max(6, 8 * u);
+      ctx.fillStyle = '#FFD24C';
+      ctx.font = small(11);
+      ctx.fillText('PLANET CANNON  ' + Math.ceil(left) + 'S', cx, below);
+      ctx.fillStyle = 'rgba(255,210,76,.18)';
+      ctx.fillRect(cx - bw / 2, below + 10 * u, bw, bh);
+      ctx.shadowColor = '#FFD24C'; ctx.shadowBlur = 10 * u;
+      ctx.fillStyle = '#FFD24C';
+      ctx.fillRect(cx - bw / 2, below + 10 * u, bw * k, bh);
+    } else if (boss && boss.phase === 'laser') {
+      ctx.globalAlpha = Math.min(1, boss.t / 0.3);
+      ctx.fillStyle = '#FFD24C';
+      ctx.shadowColor = '#FFD24C'; ctx.shadowBlur = 16 * u;
+      ctx.font = big(30);
+      ctx.fillText(boss.blown ? 'MOTHERSHIP DESTROYED' : 'FIRE!', cx, below);
+    } else if (land && land.down) {
+      const a = Math.min(1, (land.t - LAND_TIME) / 0.5);
+      ctx.globalAlpha = a;
+      ctx.fillStyle = '#FFD24C';
+      ctx.shadowColor = '#FFD24C'; ctx.shadowBlur = 18 * u;
+      ctx.font = big(40);
+      ctx.fillText('WELCOME HOME', cx, H * 0.82);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#FFE9A8';
+      ctx.font = small(12);
+      ctx.fillText('LANDED ON ' + PLANET_STAGES[planetStage].label, cx, H * 0.82 + 26 * u);
+    }
+    ctx.restore();
   }
 
   /* ---------- loop ---------- */

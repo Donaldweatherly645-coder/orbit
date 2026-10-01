@@ -31,6 +31,7 @@ Your ship is locked in a fixed orbit around the planet. Press the one button to 
   | Last Stand | Rare | Once per run, survive a fatal hit with no shields -- the screen clears and time slows |
 
   Every active buff gets a card along the bottom of the screen with its name, a status line and a bar: slow-mo counts down its seconds, Nova Pulse counts down to its next shockwave, Guardian Moon shows its recharge, Echo Shield shows near misses toward its next shield, Last Stand shows READY or SPENT, and the rest say ALL RUN. The BUFFS counter in the top bar shows how many upgrades you have collected this run, and the game-over screen lists every buff and pickup you collected by name, next to the run and all-time counts.
+- **Beat the Mothership.** A few seconds after the planet reaches its final form, the UFOs' mothership arrives and parks above your orbit. You can't shoot it -- the planet is charging a cannon, and you have to outlast the mothership until the charge bar fills (45s on EASY, 60s on NORMAL and HARD, 70s on EXTREME). Its four turrets charge and fire aimed shots like UFOs, and every few seconds it paints a blinking red arc on the orbit where you're heading, then burns it with a beam: flip away before it fires. Halfway through it turns red and everything comes faster. When the cannon is charged, the planet fires a giant laser, the mothership explodes (+2,500 points, plus 500 for every shield you still have), and a cutscene flies your ship down to land on the planet. That ends the run with a gold MISSION COMPLETE screen.
 - Take a hit without a shield up and it's over.
 
 The soundtrack is "Crossing the Meteor Belt", a recorded song that starts from the top every run and loops for as long as you last. The game still steers it: grabbing a buff (a shield, slow-mo or a planet upgrade) sparkles a bright shimmer over the top, and every new planet is announced by a cymbal crash and a quick fanfare, pitched to fit the song. It fades out when you crash, and `M` or the SOUND button mutes it along with the sound effects. Slow motion gets its own musical treatment: the song brakes like a slowing tape, speed and pitch dropping together, with a darker, roomier mix. When slow motion ends, speed, pitch and brightness glide back up over a couple of seconds, then a cymbal crash lands the song back on its feet. A new planet reached mid-slow-mo saves its fanfare until the song is back up to speed.
@@ -49,6 +50,8 @@ Pick a difficulty from the title screen before launching. Every tier has its own
 - **EXTREME** — the fastest, densest tier, paired with the most vivid, fastest-shifting version of that same backdrop -- full psychedelic. Up to three UFOs can be hovering at once, firing fast. A dark vignette keeps the ship and orbit legible at every tier, even as the edges of the screen go wild here.
 
 Your best score is saved locally in your browser and shown on the title screen.
+
+**Testing the ending:** add `?dev=boss` to the address (for example `https://donaldweatherly645-coder.github.io/orbit/?dev=boss`) to start every run on the final planet, with the Mothership arriving a few seconds in. The title screen says DEV MODE, and dev runs never change your saved best score.
 
 ## Install it on your phone
 
