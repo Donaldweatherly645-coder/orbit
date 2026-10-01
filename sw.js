@@ -43,6 +43,9 @@ self.addEventListener('fetch', (e) => {
 
   e.respondWith(
     caches.match(req).then((hit) => {
+      // the soundtrack is big and never changes under the same name: once
+      // it's cached, don't download it again in the background
+      if (hit && req.url.endsWith('.mp3')) return hit;
       const net = fetch(req)
         .then((res) => {
           if (res.ok || res.type === 'opaque') {
