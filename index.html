@@ -425,12 +425,13 @@
     near:  () => tone(150, 110, 0.1, 'sine', 0.06),
     die:   () => { hiss(0.7, 0.22); tone(240, 40, 0.75, 'sawtooth', 0.14); },
     ufoFire:     () => tone(520, 170, 0.16, 'sawtooth', 0.07),
-    shieldGet:   () => tone(500, 900, 0.16, 'triangle', 0.08),
+    shieldGet:   () => { tone(500, 900, 0.16, 'triangle', 0.08); musicBuff(); },
     shieldBreak: () => { tone(700, 200, 0.18, 'square', 0.09); hiss(0.15, 0.06); },
     slowIn:      () => { tone(520, 90, 0.5, 'sine', 0.09); hiss(0.35, 0.05); },
     slowOut:     () => tone(140, 700, 0.9, 'triangle', 0.05),
     // a rising major arpeggio; rarer upgrades keep climbing and sparkle
     reward: (rarity) => {
+      musicBuff();
       chime([523, 659, 784, 1047], 0.075, 0, 'triangle', 0.08);
       if (rarity >= 1) chime([1319, 1568], 0.075, 0.3, 'triangle', 0.07);
       if (rarity >= 2) { chime([2093, 2637, 3136, 4186], 0.05, 0.45, 'sine', 0.05); hiss(0.6, 0.04); }
@@ -439,51 +440,57 @@
     moonHit: () => tone(900, 300, 0.12, 'square', 0.05),
   };
   /* ---------- music ---------- */
-  // An adaptive synthwave score, sequenced live with Web Audio over an
-  // Am-F-C-G loop. Two things steer it, and every change lands on the beat
-  // grid so it never cuts or jumps:
-  //  - tier: how far you've made it (the planet stage). Each tier adds a
-  //    layer -- an arpeggio, then big detuned-saw chords, a driving bass and
-  //    drum fills, then key changes up for the late game -- and nudges the
-  //    tempo up. Tier changes wait for the next 4-bar phrase and hit with a
-  //    crash cymbal.
+  // An adaptive darksynth score at 140 BPM in E minor, sequenced live with
+  // Web Audio over a driving Em-C-G-D loop. A relentless 16th-note arpeggio
+  // and a sub-bass "heartbeat" run the whole time; off-beat accents give the
+  // groove its push, and every dodge lands an extra accent on the next 16th
+  // so your taps play along with the beat. Three things steer it, and every
+  // change lands on the beat grid so it never cuts or jumps:
+  //  - level: which of 10 music planets you've reached (two planet stages
+  //    each). Planet 1 is clean and crisp; each one after adds a layer --
+  //    snare and bass, pads, the lead hook, syncopated kicks, then industrial
+  //    grit (distortion), a counter-melody, metal percussion, and finally a
+  //    doubled, harmonised lead. A new planet waits for the next bar and hits
+  //    with a crash and a fanfare.
   //  - heat: how intense the action is right now (debris closing in, UFOs,
   //    shots, a hot spark chain). Heat opens up the filters, doubles the
-  //    hi-hats, switches the bass to 16ths and rolls the snare into the
-  //    next bar, then settles back down when things calm.
-  const MUSIC_BPM = { easy: 104, normal: 116, hard: 128, extreme: 140 };
+  //    hi-hats and rolls the snare into the next bar, then settles back down.
+  //  - buffs: grabbing a shield, slow-mo or upgrade flips the chords to
+  //    bright major for two bars and adds a shimmering high arpeggio.
+  const MUSIC_BPM = 140;
   const MUSIC_VOL = 0.42;
-  const BASS = [33, 29, 36, 31];                                   // A1 F1 C2 G1
-  const PADS = [[57, 60, 64], [57, 60, 65], [55, 60, 64], [55, 59, 62]];
-  const ARP  = [[69, 72, 76, 81], [69, 72, 77, 81], [67, 72, 76, 79], [67, 71, 74, 79]];
+  const MUSIC_LEVELS = 10;
+  // E minor (Aeolian): Em  C  G  D, one chord per bar
+  const BASS = [28, 36, 31, 38];                                   // E1 C2 G1 D2
+  const PADS = [[64, 67, 71], [64, 67, 72], [62, 67, 71], [62, 66, 69]];
+  const ARP  = [[64, 67, 71, 76], [64, 67, 72, 76], [67, 71, 74, 79], [66, 69, 74, 78]];
+  // the same loop, brightened for a buff: Em turns to E major (G -> G#)
+  const PADS_BRIGHT = [[64, 68, 71], [64, 67, 72], [62, 67, 71], [62, 66, 69]];
+  const ARP_BRIGHT  = [[64, 68, 71, 76], [64, 67, 72, 76], [67, 71, 74, 79], [66, 69, 74, 78]];
+  // off-beat 16ths that get an accent: the syncopated push of the groove
+  const ACCENT = { 3: 1, 6: 1, 11: 1, 14: 1 };
   // The hook: [16th-note step within the 8-bar loop, MIDI note, length in 16ths]
   const LEAD = [
-    [0,69,2],[3,72,1],[4,76,3],[8,74,2],[10,72,2],[12,76,4],
-    [16,72,2],[19,69,1],[20,72,2],[22,74,2],[24,72,2],[26,69,6],
-    [32,67,2],[35,72,1],[36,76,3],[40,79,2],[42,76,2],[44,74,4],
-    [48,74,2],[51,71,1],[52,74,2],[54,76,2],[56,74,4],[60,71,2],[62,67,2],
-    [64,81,2],[66,79,2],[68,76,2],[70,79,2],[72,81,4],[76,76,4],
-    [80,77,2],[82,76,2],[84,72,2],[86,76,2],[88,77,4],[92,81,4],
-    [96,79,2],[98,76,2],[100,72,2],[102,76,2],[104,79,2],[106,81,2],[108,79,4],
-    [112,74,3],[115,76,1],[116,79,2],[118,74,2],[120,71,4],
+    [0,71,2],[3,74,1],[4,76,3],[8,74,2],[10,71,2],[12,67,4],
+    [16,72,2],[19,71,1],[20,72,2],[22,74,2],[24,76,2],[26,72,6],
+    [32,74,2],[35,71,1],[36,67,3],[40,71,2],[42,74,2],[44,79,4],
+    [48,78,2],[51,76,1],[52,74,2],[54,78,2],[56,81,4],[60,78,2],[62,74,2],
+    [64,83,2],[66,81,2],[68,79,2],[70,76,2],[72,79,4],[76,76,4],
+    [80,79,2],[82,76,2],[84,72,2],[86,76,2],[88,79,4],[92,84,4],
+    [96,83,2],[98,79,2],[100,74,2],[102,79,2],[104,83,2],[106,86,2],[108,83,4],
+    [112,81,3],[115,78,1],[116,74,2],[118,78,2],[120,76,4],
   ];
   const LEAD_AT = {};
   for (const [at, m, len] of LEAD) LEAD_AT[at] = [m, len];
-  const TIER_AT  = [0, 2, 4, 9, 13];   // planet stage that unlocks each music tier
-  const TIER_BPM = 3;                  // tempo added per tier
-  // Every planet changes the song. Its key (semitones from A minor) mostly
-  // lifts a step at a time -- the classic "key change" payoff -- and dips
-  // back down only where a new tier lands with a bigger arrangement. On top
-  // of that the lead's sound, the arpeggio pattern and the kick pattern
-  // rotate, so no two neighbouring planets sound alike.
-  const STAGE_KEY = [0, 2, 3, 5, 0, 2, 3, 5, 7, 2, 3, 5, 7, 3, 5, 7, 8, 5, 7, 8];
-  const LEAD_VOICES = [['square', 2400, 0.05], ['sawtooth', 2000, 0.045], ['triangle', 5000, 0.08], ['square', 3400, 0.045]];
+  // counter-melody: lower, on the off-beats, answering the hook in its gaps
+  const COUNTER = [[59, 62, 64, 62], [60, 64, 67, 64], [62, 59, 62, 67], [57, 62, 66, 62]];
+  const COUNTER_AT = { 2: [0, 3], 6: [1, 2], 10: [2, 3], 14: [3, 2] };
   const ARP_ORDER = [[0, 1, 2, 3], [3, 2, 1, 0], [0, 2, 1, 3]];
-  const FINALE_AT = 17;                // planet where the lead gains a harmony
-  function musicTierFor(stage) {
-    let t = 0;
-    for (let i = 1; i < TIER_AT.length; i++) if (stage >= TIER_AT[i]) t = i;
-    return t;
+  // distortion blend per music planet: clean early, grinding by planet 10
+  const GRIT = [0, 0, 0, 0.04, 0.08, 0.14, 0.2, 0.28, 0.36, 0.45];
+  const BRIGHT_STEPS = 32;             // a buff brightens the music for 2 bars
+  function musicLevelFor(stage) {
+    return Math.min(MUSIC_LEVELS - 1, Math.floor(stage / 2));
   }
   const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
@@ -549,6 +556,11 @@
     noiseHit(a, bus.out, t, 0.16, 0.16 * vol, 'bandpass', 1800).connect(bus.verb);
     drum(a, bus.out, t, 200, 150, 0.09, 0.1 * vol);
   }
+  // industrial metal hit: two clashing square partials and a burst of noise
+  function clank(a, bus, t, vol) {
+    for (const fr of [540, 813]) voice(a, bus.out, t, fr, 0.09, 'square', 0.02 * vol, 4000, 0.002);
+    noiseHit(a, bus.out, t, 0.06, 0.06 * vol, 'bandpass', 3200).connect(bus.verb);
+  }
   function makeImpulse(a, secs) {
     const len = Math.floor(a.sampleRate * secs), buf = a.createBuffer(2, len, a.sampleRate);
     for (let ch = 0; ch < 2; ch++) {
@@ -557,13 +569,34 @@
     }
     return buf;
   }
-  // Mixer: a dry path plus an echo (for the lead) and a big reverb, all
-  // through a master low-pass ("tone") that slow motion closes down, plus
-  // the shared pitch bend.
+  // soft-clip curve for the grit channel
+  function makeDrive(k) {
+    const c = new Float32Array(1024);
+    for (let i = 0; i < c.length; i++) c[i] = Math.tanh(k * (i / 511.5 - 1)) / Math.tanh(k);
+    return c;
+  }
+  // Mixer: everything plays into `out`, which splits into a clean path and a
+  // grit path (distortion on everything above the sub, blended in per
+  // planet). An echo (for the lead and arps) and a big reverb join them in a
+  // master low-pass ("tone") that slow motion closes down, then a limiter
+  // keeps the stacked late-game layers from clipping. Plus the shared bend.
   function makeBus(a, dest, sixteenth) {
+    const limit = a.createDynamicsCompressor();
+    limit.threshold.value = -10; limit.ratio.value = 8;
+    limit.attack.value = 0.003; limit.release.value = 0.2;
+    limit.connect(dest);
     const tone = a.createBiquadFilter();
     tone.type = 'lowpass'; tone.frequency.value = 18000; tone.Q.value = 0.7;
-    tone.connect(dest);
+    tone.connect(limit);
+    const out = a.createGain(), clean = a.createGain();
+    out.connect(clean); clean.connect(tone);
+    const gritHp = a.createBiquadFilter(), shaper = a.createWaveShaper();
+    const gritLp = a.createBiquadFilter(), grit = a.createGain();
+    gritHp.type = 'highpass'; gritHp.frequency.value = 150;
+    shaper.curve = makeDrive(6); shaper.oversample = '4x';
+    gritLp.type = 'lowpass'; gritLp.frequency.value = 5500;
+    grit.gain.value = 0;
+    out.connect(gritHp); gritHp.connect(shaper); shaper.connect(gritLp); gritLp.connect(grit); grit.connect(tone);
     const echo = a.createDelay(2), fb = a.createGain(), wet = a.createGain();
     echo.delayTime.value = sixteenth * 3;
     fb.gain.value = 0.32; wet.gain.value = 0.26;
@@ -574,85 +607,128 @@
     const bend = a.createConstantSource();
     bend.offset.value = 0; bend.start();
     curBend = bend;
-    return { out: tone, echo, verb, tone, bend, wet: vw };
+    return { out, clean, grit, echo, verb, tone, bend, wet: vw };
+  }
+  function setGrit(bus, level, t) {
+    const g = GRIT[level];
+    bus.grit.gain.setTargetAtTime(g, t, 0.3);
+    bus.clean.gain.setTargetAtTime(1 - g * 0.5, t, 0.3);
   }
 
   // Schedules everything that sounds on one 16th-note step of the song.
-  // mix = { tier, heat, key, crash }
+  // mix = { level, heat, stage, crash, fanfare, bright, dodge, buffStab }
   function musicStep(a, bus, step, t, six, mix) {
     const bar = Math.floor(step / 16) % 4, s = step % 16, loop = step % 128;
-    const { tier, heat, key, stage } = mix;
-    const n = (m) => mtof(m + key);
-    const lastBar = loop >= 112;
+    const { level: L, heat, stage, bright } = mix;
+    const n = mtof;
+    const lastBar = loop >= 112, acc = !!ACCENT[s];
+    const pads = bright ? PADS_BRIGHT : PADS, arp = bright ? ARP_BRIGHT : ARP;
 
-    // drums
+    // drums: four on the floor from the start
     if (mix.crash && s % 4 === 0) noiseHit(a, bus.out, t, 1.8, 0.12, 'highpass', 5000).connect(bus.verb);
-    if (s % 4 === 0) drum(a, bus.out, t, 150, 42, 0.26, tier >= 2 ? 0.42 : 0.35);
-    if (tier >= 4 && s === 10) drum(a, bus.out, t, 150, 42, 0.22, 0.3);
-    if (stage % 2 === 1 && s === 7) drum(a, bus.out, t, 150, 42, 0.2, 0.26);   // syncopated kick
-    if (tier >= 2 && lastBar && s >= 8) {
+    if (s % 4 === 0) drum(a, bus.out, t, 150, 42, 0.26, L >= 4 ? 0.42 : 0.36);
+    if (L >= 4 && (s === 7 || s === 10)) drum(a, bus.out, t, 150, 42, 0.2, 0.26);   // syncopated kicks
+    if (L >= 8 && lastBar && s >= 8) {
       // tom fill into the next phrase
       if (s % 2 === 0) drum(a, bus.out, t, 220 - s * 8, 90 - s * 3, 0.22, 0.22).connect(bus.verb);
       else if (s >= 13) snare(a, bus, t, 0.8);
-    } else if (heat > 0.75 && bar === 3 && s >= 12) {
+    } else if (L >= 1 && heat > 0.75 && bar === 3 && s >= 12) {
       snare(a, bus, t, 0.35 + (s - 12) * 0.2);                   // tension roll
-    } else if (s === 4 || s === 12) {
+    } else if (L >= 1 && (s === 4 || s === 12)) {
       snare(a, bus, t, 1);
     }
-    if (heat > 0.4 || tier >= 3) {
+    // hats: off-beat 8ths, 16ths once it heats up, open hats on the accents
+    if (heat > 0.4 || L >= 4) {
       noiseHit(a, bus.out, t, 0.035, s % 4 === 2 ? 0.07 : 0.035, 'highpass', 7000);
     } else if (s % 4 === 2) {
       noiseHit(a, bus.out, t, 0.04, 0.07, 'highpass', 7000);
     }
+    if (L >= 4 && acc) noiseHit(a, bus.out, t, 0.14, 0.05, 'highpass', 6000);
+    if (L >= 7 && (acc || (heat > 0.6 && s % 2 === 1))) clank(a, bus, t, acc ? 1 : 0.5);
 
-    // bass: bouncing 8ths, or driving 16ths once things heat up
-    if (tier >= 2 || heat > 0.6) {
-      const m = BASS[bar] + (s % 4 === 2 ? 12 : 0);
-      voice(a, bus.out, t, n(m), six * 0.9, 'sawtooth', 0.1, 500 + heat * 700);
-    } else if (s % 2 === 0) {
-      const m = BASS[bar] + (s % 4 === 2 ? 12 : 0);
-      voice(a, bus.out, t, n(m), six * 1.8, 'sawtooth', 0.11, 700);
+    // sub-bass drone: the planet's heartbeat, a strong pulse on 1 and 3 and
+    // a softer one on 2 and 4. The octave-up layer lets phone speakers,
+    // which can't play the real sub, still hear it throb.
+    if (s % 4 === 0) {
+      const m = BASS[bar], big = s % 8 === 0;
+      voice(a, bus.out, t, n(m), six * 4, 'sine', big ? 0.22 : 0.14, 400, 0.02);
+      voice(a, bus.out, t, n(m + 12), six * 3, 'triangle', big ? 0.05 : 0.03, 600, 0.02);
     }
 
-    // chords: soft pads early, huge swelling saws later
-    if (s === 0) {
-      const cutoff = 900 + heat * 2000 + tier * 250;
-      if (tier >= 2) {
-        for (const m of PADS[bar]) swell(a, bus, t, n(m), six * 16, 0.018, cutoff);
-        swell(a, bus, t, n(PADS[bar][0] - 12), six * 16, 0.016, cutoff);
-      } else {
-        for (const m of PADS[bar]) voice(a, bus.out, t, n(m), six * 15, 'triangle', 0.03, 1800).connect(bus.verb);
+    // bass line: bouncing 8ths, or driving 16ths once things heat up
+    if (L >= 1) {
+      if (L >= 4 || heat > 0.6) {
+        const m = BASS[bar] + 12 + (s % 4 === 2 ? 12 : 0);
+        voice(a, bus.out, t, n(m), six * 0.9, 'sawtooth', acc ? 0.1 : 0.075, 500 + heat * 700 + L * 60);
+      } else if (s % 2 === 0) {
+        const m = BASS[bar] + 12 + (s % 4 === 2 ? 12 : 0);
+        voice(a, bus.out, t, n(m), six * 1.8, 'sawtooth', 0.09, 700);
       }
     }
 
-    // arpeggio sparkle
-    if (tier >= 1 || heat > 0.5) {
-      const m = ARP[bar][ARP_ORDER[stage % 3][s % 4]] + (tier >= 3 && s % 8 >= 4 ? 12 : 0);
-      voice(a, bus.out, t, n(m), six * 0.8, 'square', 0.014 + heat * 0.014, 1500 + heat * 2500).connect(bus.echo);
+    // chords: soft pads, then huge swelling saws once the grit arrives
+    if (L >= 2 && s === 0) {
+      const cutoff = 900 + heat * 2000 + L * 150;
+      if (L >= 5) {
+        for (const m of pads[bar]) swell(a, bus, t, n(m), six * 16, 0.018, cutoff);
+        swell(a, bus, t, n(pads[bar][0] - 12), six * 16, 0.016, cutoff);
+      } else {
+        for (const m of pads[bar]) voice(a, bus.out, t, n(m), six * 15, 'triangle', 0.03, 1800).connect(bus.verb);
+      }
     }
 
-    // lead hook, after two bars of groove; doubled an octave up later on
-    const note = step >= 32 && LEAD_AT[loop];
+    // the relentless 16th-note arpeggio, accented on the off-beats; it
+    // lifts an octave on the second half of each beat in later planets
+    {
+      const m = arp[bar][ARP_ORDER[stage % 3][s % 4]] + (L >= 6 && s % 8 >= 4 ? 12 : 0);
+      const vol = (acc ? 0.03 : 0.016) + heat * 0.012;
+      const cutoff = (acc ? 3200 : 1800) + heat * 2500;
+      voice(a, bus.out, t, n(m), six * (acc ? 1.2 : 0.8), L >= 5 ? 'sawtooth' : 'square', vol, cutoff).connect(bus.echo);
+    }
+    // a dodge lands as an extra accent on this 16th: the tap joins the groove
+    if (mix.dodge) {
+      voice(a, bus.out, t, n(arp[bar][3] + 12), six * 1.5, 'square', 0.045, 5000).connect(bus.echo);
+      noiseHit(a, bus.out, t, 0.06, 0.05, 'highpass', 6000);
+    }
+
+    // buff: an instant bright major stab, then a shimmering high arpeggio
+    if (mix.buffStab) {
+      for (const m of pads[bar]) swell(a, bus, t, n(m + 12), six * 8, 0.022, 6000);
+    }
+    if (bright) {
+      const m = arp[bar][(s * 3) % 4] + 24;
+      voice(a, bus.out, t, n(m), six * 0.9, 'triangle', 0.03, 9000).connect(bus.echo);
+    }
+
+    // lead hook from planet 4, after two bars of groove: clean square, then
+    // a gritty saw, doubled an octave up and harmonised in the final planets
+    const note = L >= 3 && step >= 32 && LEAD_AT[loop];
     if (note) {
       const dur = six * note[1] * 0.95;
-      const [type, cutoff, vol] = LEAD_VOICES[stage % 4];
-      const g = voice(a, bus.out, t, n(note[0]), dur, type, vol, cutoff + heat * 1200);
+      const g = voice(a, bus.out, t, n(note[0]), dur, L >= 5 ? 'sawtooth' : 'square', L >= 5 ? 0.045 : 0.05, 2400 + L * 200 + heat * 1200);
       g.connect(bus.echo); g.connect(bus.verb);
-      if (tier >= 2) voice(a, bus.out, t, n(note[0] + 12), dur, 'sawtooth', 0.018, 3500).connect(bus.echo);
-      if (stage >= FINALE_AT) voice(a, bus.out, t, n(note[0] - 5), dur, 'triangle', 0.035, 3000).connect(bus.verb);
+      if (L >= 8) voice(a, bus.out, t, n(note[0] + 12), dur, 'sawtooth', 0.018, 3500).connect(bus.echo);
+      if (L >= 9) voice(a, bus.out, t, n(note[0] - 5), dur, 'triangle', 0.035, 3000).connect(bus.verb);
+    }
+
+    // counter-melody from planet 7, on the off-beats in the hook's gaps
+    const cm = L >= 6 && COUNTER_AT[s];
+    if (cm) {
+      voice(a, bus.out, t, n(COUNTER[bar][cm[0]]), six * cm[1] * 0.9, 'square', 0.03, 1600 + heat * 800).connect(bus.verb);
     }
 
     // new-planet fanfare: a bright chord stab and an arpeggio racing upward
     if (mix.fanfare && s === 0) {
-      for (const m of PADS[bar]) swell(a, bus, t, n(m + 12), six * 8, 0.02, 4500);
-      ARP[bar].concat(ARP[bar].map((m) => m + 12)).forEach((m, i) => {
+      for (const m of pads[bar]) swell(a, bus, t, n(m + 12), six * 8, 0.02, 4500);
+      arp[bar].concat(arp[bar].map((m) => m + 12)).forEach((m, i) => {
         voice(a, bus.out, t + i * six * 0.5, n(m), six * 0.9, 'square', 0.03, 5000).connect(bus.echo);
       });
     }
   }
 
   const music = { gain: null, bus: null, step: 0, next: 0, sixteenth: 0, timer: 0,
-                  tier: 0, key: 0, stage: 0, heat: 0, rate: null, crashNext: false, slow: false };
+                  level: 0, stage: 0, heat: 0, rate: null, crashNext: false, slow: false,
+                  brightUntil: 0, buffStab: false, dodge: false };
   // Slow motion, musically: the song drops to half speed (a half-time feel
   // that keeps the beat), every note bends down together like a tape
   // braking, and the mix goes dark and roomy. When it ends, speed, pitch and
@@ -687,8 +763,18 @@
     glide(b.echo.delayTime, music.sixteenth * 3 / (on ? SLOW_RATE : 1), false);
     if (!on) noiseHit(a, b.out, t, dur, 0.05, 'bandpass', 3000);   // riser-ish whoosh
   }
+  // a buff was grabbed: bright major stab on the next 16th, shimmer for 2 bars
+  function musicBuff() {
+    if (!music.timer) return;
+    music.buffStab = true;
+    music.brightUntil = music.step + BRIGHT_STEPS;
+  }
+  // the player dodged: accent the next 16th
+  function musicDodge() {
+    if (music.timer) music.dodge = true;
+  }
   function musicTempo() {
-    return 15 / (MUSIC_BPM[difficulty] + music.tier * TIER_BPM);
+    return 15 / MUSIC_BPM;
   }
   function musicTick() {
     const a = actx;
@@ -700,17 +786,17 @@
       // and a fanfare, so the reward is heard as well as seen
       if (music.step % 16 === 0 && planetStage !== music.stage && !music.slow && musicRateAt(music.next) >= 1) {
         music.stage = planetStage;
-        music.tier = musicTierFor(planetStage);
-        music.key = STAGE_KEY[planetStage % STAGE_KEY.length];
+        music.level = musicLevelFor(planetStage);
+        setGrit(music.bus, music.level, music.next);
         crash = true; fanfare = true;
-        music.sixteenth = musicTempo();
-        if (musicRateAt(music.next) >= 1) music.bus.echo.delayTime.setTargetAtTime(music.sixteenth * 3, music.next, 0.2);
       }
       const rate = musicRateAt(music.next);
       // the speed-up transition is over: land back on the beat with a crash
       if (music.crashNext && rate >= 1 && music.step % 4 === 0) { crash = true; music.crashNext = false; }
       musicStep(a, music.bus, music.step, music.next, music.sixteenth / rate,
-        { tier: music.tier, heat: music.heat, key: music.key, stage: music.stage, crash, fanfare });
+        { level: music.level, heat: music.heat, stage: music.stage, crash, fanfare,
+          bright: music.step < music.brightUntil, dodge: music.dodge, buffStab: music.buffStab });
+      music.dodge = false; music.buffStab = false;
       music.step++; music.next += music.sixteenth / rate;
     }
   }
@@ -734,7 +820,8 @@
     const g = a.createGain();
     g.gain.value = muted ? 0 : MUSIC_VOL;
     g.connect(a.destination);
-    music.tier = 0; music.key = 0; music.stage = 0; music.heat = 0; music.rate = null; music.crashNext = false; music.slow = false;
+    music.level = 0; music.stage = 0; music.heat = 0; music.rate = null; music.crashNext = false; music.slow = false;
+    music.brightUntil = 0; music.buffStab = false; music.dodge = false;
     music.sixteenth = musicTempo();
     music.gain = g; music.bus = makeBus(a, g, music.sixteenth);
     music.step = 0; music.next = a.currentTime + 0.06;
@@ -1088,7 +1175,7 @@
       }
     }
     if (state === 'play') {
-      player.dir *= -1; sfx.flip();
+      player.dir *= -1; sfx.flip(); musicDodge();
       player.trail.length = 0;
     } else if (state === 'menu') {
       start();
@@ -1388,6 +1475,7 @@
           burst(sx, sy, 16, '#B79CFF', 150 * u);
           sfx.slowIn();
           musicSlow(true);
+          musicBuff();
           slowPickup = null;
         } else if (slowPickup.life <= 0) {
           slowPickup = null;
