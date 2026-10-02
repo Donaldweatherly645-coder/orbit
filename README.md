@@ -20,11 +20,7 @@ Your ship is locked in a fixed orbit around the planet. Press the one button to 
   | Upgrade | Rarity | Effect |
   |---|---|---|
   | Hull Patch | Common (can repeat) | +1 shield layer |
-  | Spark Magnet | Common | Grab pickups from further away |
-  | Steady Nerves | Common | Longer escape window after a hit |
-  | Dampener Field | Uncommon | New debris and UFO shots move 12% slower |
   | Chrono Core | Uncommon | Slow motion lasts 5s and shows up more often |
-  | Signal Jammer | Uncommon | UFOs take longer to aim and fire less often |
   | Echo Shield | Uncommon | Every 10 near misses restores a shield layer |
   | Guardian Moon | Rare | A moon circles your ship and smashes debris (5s recharge) |
   | Nova Pulse | Rare | Every 30s a shockwave clears the space around the planet |
@@ -32,6 +28,7 @@ Your ship is locked in a fixed orbit around the planet. Press the one button to 
 
   There's no text tracker to read mid-fight. Every upgrade is announced by name when you get it, and the ones that change during a run show right on the playfield, so you never have to look away: slow-mo is a violet ring around your ship that drains as it runs out, Echo Shield is ten dots around the ship that light up with each near miss, Last Stand turns your ship's glow gold while it's ready, Guardian Moon shows a ring filling back up as it recharges, and Nova Pulse is a gold ring around the planet that fills toward the next shockwave and blinks when it's about to fire -- then a gold wave visibly rolls out from the planet, smashing debris and shots near it, with a NOVA PULSE callout. Grabbing a shield or slow-mo, or being saved by Last Stand, flashes its name and what it does above the orbit. The game-over screen lists every buff and pickup you collected by name, next to the run and all-time counts.
 - **Beat the Mothership.** A few seconds after the planet reaches its final form, the UFOs' mothership arrives and parks above your orbit. You can't shoot it -- the planet is charging a cannon, and you have to outlast the mothership until the charge bar fills (45s on EASY, 60s on NORMAL and HARD, 70s on EXTREME). Its four turrets charge and fire aimed shots like UFOs, and every few seconds it paints a blinking red arc on the orbit where you're heading, then burns it with a beam: flip away before it fires. Halfway through it turns red and everything comes faster. When the cannon is charged, the planet fires a giant laser, the mothership explodes (+2,500 points, plus 500 for every shield you still have), and a cutscene flies your ship down to land on the planet. That ends the run with a gold MISSION COMPLETE screen.
+- **Watch for snagged rocks.** Every few seconds, one of the falling rocks gets caught on your orbit instead of passing through: it glows red and pulses there for a few seconds, then cracks apart. It's not aimed at you and it's not an extra rock -- but it stays put longer than it takes your ship to go all the way round, so you can't just coast in one direction. Flip away from it, and when two are up, bounce between them.
 - Take a hit without a shield up and it's over.
 
 The soundtrack is a recorded song that starts from the top every run and loops for as long as you last: "Crossing the Meteor Belt" on EASY, "Phase Eight Pursuit" on NORMAL and HARD, and the faster, more intense "Last Save Point" on EXTREME. All three behave the same way, and all the songs are mastered to the same loudness. The title and game-over screens have their own song, "Ready for Launch": it starts with your first tap on the title screen (browsers don't allow sound before that), fades out when you launch, and the run's song begins the instant it has gone quiet -- the two are never heard at the same time. After a crash or a win, the run's song fades out first, then "Ready for Launch" fades back in. The game still steers it: grabbing a buff (a shield, slow-mo or a planet upgrade) sparkles a bright shimmer over the top, and every new planet is announced by a cymbal crash and a quick fanfare, pitched to fit the song. It fades out when you crash, and `M` or the SOUND button mutes it along with the sound effects. Slow motion gets its own musical treatment: the song winds down like a tape slowing to a stop over about a second -- gently at first, then sinking -- with speed and pitch dropping together and just a touch of softening and room, so it still sounds like the same song, only slower -- and the game slows on the same curve. When slow motion ends, the song and the game snap back to full speed in under half a second so the pace never drags, and a cymbal crash lands the song back on its feet. A new planet reached mid-slow-mo saves its fanfare until the song is back up to speed.
@@ -50,6 +47,18 @@ Pick a difficulty from the title screen before launching. Every tier has its own
 - **EXTREME** — the fastest, densest tier, paired with the most vivid, fastest-shifting version of that same backdrop -- full psychedelic. Up to three UFOs can be hovering at once, firing fast. A dark vignette keeps the ship and orbit legible at every tier, even as the edges of the screen go wild here.
 
 Your best score is saved locally in your browser and shown on the title screen.
+
+**Achievements:** ten to earn, saved on your device. Tap **ACHIEVEMENTS** on the title or game-over screen to see them all -- the ones you haven't earned yet are greyed out with what it takes. A banner drops in the moment you earn one. Dev-mode runs don't count.
+
+| Achievement | How to earn it |
+|---|---|
+| First Orbit | Survive 30 seconds |
+| Iron Nerves | Survive 3 minutes in one run |
+| Cadet / Pilot / Ace / Legend | Reach planet 5 on EASY / NORMAL / HARD / EXTREME |
+| Halfway There | Reach planet 10 |
+| Ascendant | Reach planet 20 |
+| Mission Complete | Beat the Mothership |
+| Extreme Victor | Beat the Mothership on EXTREME |
 
 **Dev mode (for testing):** tap **DEV MODE** under the difficulty buttons, on the title or game-over screen. Two more toggles appear:
 

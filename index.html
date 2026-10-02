@@ -187,6 +187,32 @@
     margin:22px 0 0;
   }
   .installTip b{color:var(--ice); font-weight:500; white-space:nowrap}
+  /* achievements: a button on the title / game-over screens, a list
+     panel, and a banner that drops in when one is earned */
+  .achBtn{
+    font-family:var(--mono); font-size:10px; letter-spacing:.22em;
+    color:#FFD24C; background:transparent; border:1px solid rgba(255,210,76,.45);
+    padding:9px 14px; min-height:40px; margin-top:16px; cursor:pointer;
+  }
+  .achBtn:hover{border-color:#FFD24C}
+  .achBtn:focus-visible{outline:2px solid var(--sodium); outline-offset:2px}
+  #achList{display:flex; flex-direction:column; gap:6px; margin:18px 0 6px; text-align:left}
+  .ach{display:flex; gap:12px; align-items:center; padding:10px 12px; border:1px solid var(--line); background:var(--deep)}
+  .ach .ico{font-size:18px; width:22px; text-align:center; color:#FFD24C}
+  .ach .n{font-family:var(--mono); font-size:11px; letter-spacing:.12em; color:var(--flare)}
+  .ach .d{font-family:var(--mono); font-size:10px; letter-spacing:.06em; color:var(--slate-lit); margin-top:3px}
+  .ach.locked{opacity:.42}
+  .ach.locked .ico{color:var(--slate)}
+  .ach.locked .n{color:var(--slate-lit)}
+  #achToast{
+    position:absolute; left:50%; top:64px; z-index:4; transform:translate(-50%,-140%);
+    pointer-events:none; opacity:0; transition:transform .35s cubic-bezier(.2,.7,.3,1), opacity .35s;
+    background:rgba(10,14,26,.92); border:1px solid #FFD24C; padding:10px 16px; text-align:center;
+    font-family:var(--mono); white-space:nowrap; box-shadow:0 0 24px rgba(255,210,76,.25);
+  }
+  #achToast.show{transform:translate(-50%,0); opacity:1}
+  #achToast .k{font-size:9px; letter-spacing:.3em; color:#FFD24C}
+  #achToast .n{font-size:13px; letter-spacing:.14em; color:var(--flare); margin-top:4px}
   /* dev mode: a toggle under the difficulty picker that reveals god mode
      and a level (planet) picker */
   #devBox{margin-top:16px}
@@ -245,6 +271,7 @@
 <div id="stage">
   <canvas id="field"></canvas>
 
+  <div id="achToast"><div class="k">ACHIEVEMENT UNLOCKED</div><div class="n" id="achToastName"></div></div>
   <div id="hud">
     <div class="read" id="score"><span class="k">SCORE</span><span class="v">0</span></div>
     <div class="read hidden" id="devTag"><span class="k">DEV</span><span class="v">GOD</span></div>
@@ -262,6 +289,7 @@
       <div class="rule"></div>
       <p class="blurb">Debris is falling toward the planet. You can only do one thing about it: reverse your orbit. Grab sparks to chain a multiplier, stack up to three shields to survive hits, and catch an hourglass to slow time -- alien saucers will be shooting at you too.</p>
       <p class="bestLine">BEST <span id="titleBest">0</span></p>
+      <button class="achBtn" type="button" data-ach-open>ACHIEVEMENTS <span data-ach-count>0/0</span></button>
       <p class="diffLabel">DIFFICULTY</p>
       <div class="diffs" role="group" aria-label="Difficulty" data-diffs>
         <button class="diff" type="button" data-diff="easy">EASY</button>
@@ -293,6 +321,13 @@
       <button class="prompt blink playBtn" type="button">PRESS TO LAUNCH</button>
     </div>
 
+    <div class="panel hidden" id="achPanel">
+      <p class="eyebrow">ACHIEVEMENTS</p>
+      <p class="bestLine">UNLOCKED <span data-ach-count>0/0</span></p>
+      <div id="achList"></div>
+      <button class="prompt" type="button" id="achBack">BACK</button>
+    </div>
+
     <div class="panel hidden" id="over">
       <p class="eyebrow" id="overEyebrow">ORBIT LOST</p>
       <p class="final" id="finalScore">0</p>
@@ -307,6 +342,7 @@
         <div class="stat"><span class="k">BUFFS</span><span class="v" id="stBuffs">0</span></div>
         <div class="stat"><span class="k">ALL-TIME BUFFS</span><span class="v" id="stBuffsAll">0</span></div>
       </div>
+      <button class="achBtn" type="button" data-ach-open>ACHIEVEMENTS <span data-ach-count>0/0</span></button>
       <div id="overBuffs" class="hidden">
         <p class="diffLabel">BUFFS COLLECTED</p>
         <div class="list" id="overBuffsList"></div>
@@ -851,7 +887,7 @@
       // to leave before the next arrives and you only ever see one
       // (x1.4 leaves breathing room, so they come and go instead of a permanent fleet)
       spawnGap: maxAlive > 1 ? Math.min(baseGap, 1.4 * life / maxAlive) : lerp(baseGap, life, k),
-      rateCap: lerp(sc.rate[0], sc.rate[1], k) * (1 - 0.4 * load) / (has('jammer') ? 1.4 : 1),
+      rateCap: lerp(sc.rate[0], sc.rate[1], k) * (1 - 0.4 * load),
       inFlight: Math.round(lerp(sc.inFlight[0], sc.inFlight[1], k)),
     };
   }
@@ -1012,11 +1048,7 @@
   // what the rising difficulty throws next -- helpful, never run-carrying.
   const ITEMS = [
     { id: 'patch',  name: 'HULL PATCH',     rarity: 0, weight: 30, repeat: true, desc: '+1 SHIELD LAYER' },
-    { id: 'magnet', name: 'SPARK MAGNET',   rarity: 0, weight: 24, desc: 'GRAB PICKUPS FROM FURTHER AWAY' },
-    { id: 'nerves', name: 'STEADY NERVES',  rarity: 0, weight: 22, desc: 'LONGER ESCAPE WINDOW AFTER A HIT' },
-    { id: 'damper', name: 'DAMPENER FIELD', rarity: 1, weight: 15, desc: 'NEW DEBRIS AND SHOTS 12% SLOWER' },
     { id: 'chrono', name: 'CHRONO CORE',    rarity: 1, weight: 15, desc: 'SLOW-MO LASTS 5S, SHOWS UP MORE' },
-    { id: 'jammer', name: 'SIGNAL JAMMER',  rarity: 1, weight: 14, desc: 'UFOS AIM SLOWER AND FIRE LESS' },
     { id: 'echo',   name: 'ECHO SHIELD',    rarity: 1, weight: 12, desc: '10 NEAR MISSES RESTORE A SHIELD' },
     { id: 'moon',   name: 'GUARDIAN MOON',  rarity: 2, weight: 7,  desc: 'A MOON CIRCLES YOU, SMASHING DEBRIS' },
     { id: 'nova',   name: 'NOVA PULSE',     rarity: 2, weight: 7,  desc: 'EVERY 30S A SHOCKWAVE CLEARS SPACE' },
@@ -1066,8 +1098,8 @@
     el.overBuffsList.innerHTML = chips.join('');
     el.overBuffs.classList.toggle('hidden', !chips.length);
   }
-  const pickR = () => SHIP + 15 * u * (has('magnet') ? 1.8 : 1);
-  const ufoChargeTime = () => UFO_DIFF[difficulty].chargeTime * (has('jammer') ? 1.5 : 1);
+  const pickR = () => SHIP + 15 * u;
+  const ufoChargeTime = () => UFO_DIFF[difficulty].chargeTime;
 
   function reset(menu) {
     player.a = -Math.PI / 2; player.dir = 1; player.trail.length = 0;
@@ -1077,6 +1109,7 @@
     nextUFO = UFO_DIFF[difficulty].spawnEvery[0] * 0.6; ufoGapT = 0;
     nextShield = 5 + Math.random() * 5;
     shieldPickup = null; shields = 0; graceT = 0; shieldHitT = 0;
+    snagT = SNAG_EVERY[difficulty] * 0.6;   // first snag a few seconds in
     slowPickup = null; slowT = 0; timeScale = 1; slowVis = 0;
     shieldsGot = 0; slowsGot = 0;
     owned = {}; novas = []; reward = null; hitStopT = 0;
@@ -1158,6 +1191,7 @@
     state = 'play';
     el.title.classList.add('hidden');
     el.over.classList.add('hidden');
+    document.getElementById('achPanel').classList.add('hidden');
     el.overlay.scrollTop = 0;
     ac();
     menuStop();
@@ -1179,10 +1213,78 @@
     sfx.die();
     showResults();
   }
+  /* ---------- achievements ---------- */
+  // Earned once, saved on this device. Dev runs never count.
+  const ACHIEVEMENTS = [
+    { id: 'orbit30', icon: '\u25CB', name: 'FIRST ORBIT',      desc: 'Survive 30 seconds' },
+    { id: 'iron',    icon: '\u25C9', name: 'IRON NERVES',      desc: 'Survive 3 minutes in one run' },
+    { id: 'cadet',   icon: '\u2605', name: 'CADET',            desc: 'Reach planet 5 on EASY' },
+    { id: 'pilot',   icon: '\u2605', name: 'PILOT',            desc: 'Reach planet 5 on NORMAL' },
+    { id: 'ace',     icon: '\u2605', name: 'ACE',              desc: 'Reach planet 5 on HARD' },
+    { id: 'legend',  icon: '\u2605', name: 'LEGEND',           desc: 'Reach planet 5 on EXTREME' },
+    { id: 'half',    icon: '\u25D0', name: 'HALFWAY THERE',    desc: 'Reach planet 10' },
+    { id: 'ascend',  icon: '\u25CF', name: 'ASCENDANT',        desc: 'Reach planet 20' },
+    { id: 'win',     icon: '\u2726', name: 'MISSION COMPLETE', desc: 'Beat the Mothership' },
+    { id: 'winx',    icon: '\u2739', name: 'EXTREME VICTOR',   desc: 'Beat the Mothership on EXTREME' },
+  ];
+  let achGot = {};
+  try { achGot = JSON.parse(localStorage.getItem('orbit.ach') || '{}') || {}; } catch (e) { achGot = {}; }
+  const achToastQ = [];
+  let achToastBusy = false;
+  function unlock(id) {
+    if (devRun || achGot[id]) return;
+    achGot[id] = Date.now();
+    try { localStorage.setItem('orbit.ach', JSON.stringify(achGot)); } catch (e) {}
+    achToastQ.push(ACHIEVEMENTS.find((a) => a.id === id).name);
+    nextAchToast();
+    renderAch();
+  }
+  function nextAchToast() {
+    if (achToastBusy || !achToastQ.length) return;
+    achToastBusy = true;
+    document.getElementById('achToastName').textContent = achToastQ.shift();
+    const t = document.getElementById('achToast');
+    t.classList.add('show');
+    chime([659, 831, 988, 1319], 0.08, 0, 'triangle', 0.06);
+    setTimeout(() => { t.classList.remove('show'); setTimeout(() => { achToastBusy = false; nextAchToast(); }, 400); }, 2600);
+  }
+  // checked every frame of a run (cheap: a handful of comparisons)
+  const PLANET5 = { easy: 'cadet', normal: 'pilot', hard: 'ace', extreme: 'legend' };
+  function checkAch() {
+    if (elapsed >= 30) unlock('orbit30');
+    if (elapsed >= 180) unlock('iron');
+    if (planetStage >= 4) unlock(PLANET5[difficulty]);
+    if (planetStage >= 9) unlock('half');
+    if (planetStage >= 19) unlock('ascend');
+  }
+  function renderAch() {
+    const n = ACHIEVEMENTS.filter((a) => achGot[a.id]).length;
+    document.querySelectorAll('[data-ach-count]').forEach((e) => { e.textContent = n + '/' + ACHIEVEMENTS.length; });
+    document.getElementById('achList').innerHTML = ACHIEVEMENTS.map((a) =>
+      '<div class="ach' + (achGot[a.id] ? '' : ' locked') + '"><span class="ico">' + (achGot[a.id] ? a.icon : '\u25CC') +
+      '</span><div><div class="n">' + a.name + '</div><div class="d">' + a.desc + '</div></div></div>').join('');
+  }
+  // the list opens over whichever screen you were on, and BACK returns there
+  let achFrom = null;
+  document.querySelectorAll('[data-ach-open]').forEach((b) => b.addEventListener('click', () => {
+    achFrom = el.over.classList.contains('hidden') ? el.title : el.over;
+    achFrom.classList.add('hidden');
+    document.getElementById('achPanel').classList.remove('hidden');
+    el.overlay.scrollTop = 0;
+  }));
+  document.getElementById('achBack').addEventListener('click', () => {
+    document.getElementById('achPanel').classList.add('hidden');
+    (achFrom || el.title).classList.remove('hidden');
+    el.overlay.scrollTop = 0;
+  });
+  renderAch();
+
   // the landing is done: same results panel as a crash, dressed in gold
   function victory() {
     state = 'over';
     won = true;
+    unlock('win');
+    if (difficulty === 'extreme') unlock('winx');
     readyAt = performance.now() + 900;
     showResults();
   }
@@ -1250,10 +1352,36 @@
   });
 
   /* ---------- spawning ---------- */
+  /* ---------- snagged rocks ---------- */
+  // Every few seconds, the next regular piece to reach the orbit gets
+  // caught on it: it stops there, glowing red, for SNAG_LIFE, then cracks
+  // apart. Never aimed and never extra -- it's an ordinary piece that
+  // lingers. SNAG_LIFE is longer than one lap of the ship (~2.9s), so a
+  // ship coasting in one direction always runs into it; an active player
+  // just flips away, and with two up you bounce between them.
+  // seconds between snags. EASY/NORMAL lean on them most: their sparse
+  // debris is what let a ship coast. HARD/EXTREME are dense enough to keep
+  // you busy already, so they get fewer, to avoid piling on.
+  const SNAG_EVERY = { easy: 3.0, normal: 3.0, hard: 3.6, extreme: 4.2 };
+  const SNAG_LIFE = 4.5;   // > one lap, and overlapping the next snag, so one is always waiting
+  const SNAG_SPACING = 1.2;   // radians: never snag this close to another, so you can't be boxed in
+  let snagT = 0;
+  const angGap = (a, b) => Math.abs(((a - b) % 6.2832 + 9.4248) % 6.2832 - 3.1416);
+  function trySnag(d) {
+    if (snagT > 0 || boss || land || d.harmless) return false;
+    const a = Math.atan2(d.y - cy, d.x - cx);
+    for (const o of debris) if (o.snag && angGap(a, Math.atan2(o.y - cy, o.x - cx)) < SNAG_SPACING) return false;
+    d.x = cx + Math.cos(a) * R_ORBIT; d.y = cy + Math.sin(a) * R_ORBIT;
+    d.vx = 0; d.vy = 0; d.spin *= 0.3;
+    d.snag = SNAG_LIFE;
+    snagT = SNAG_EVERY[difficulty];
+    return true;
+  }
+
   function spawnDebris(harmless) {
     const a = Math.random() * Math.PI * 2;
     const d0 = DIFF[difficulty];
-    const speed = (harmless ? 70 : Math.min(d0.speedCap, d0.speedBase + elapsed * d0.speedRamp) * (has('damper') ? 0.88 : 1)) * u;
+    const speed = (harmless ? 70 : Math.min(d0.speedCap, d0.speedBase + elapsed * d0.speedRamp)) * u;
     const r = (8 + Math.random() * 7) * u;
     const verts = [];
     const n = 6 + Math.floor(Math.random() * 3);
@@ -1303,7 +1431,7 @@
   }
   function shieldAbsorb(x, y) {
     shields--;
-    graceT = has('nerves') ? 1.4 : SHIELD_GRACE;
+    graceT = SHIELD_GRACE;
     shieldHitT = 0.6;
     shake = Math.max(shake, REDUCE ? 0 : 10 * u);
     burst(x, y, REDUCE ? 10 : 26, '#6FE3FF', 200 * u);
@@ -1382,7 +1510,7 @@
 
       // turrets: charge, then fire an aimed shot, just like a UFO
       const uc = UFO_DIFF[difficulty];
-      const spd = uc.shotSpeed * u * (has('damper') ? 0.88 : 1);
+      const spd = uc.shotSpeed * u;
       boss.turrets.forEach((tu, i) => {
         if (tu.charging) {
           tu.chargeT += dt;
@@ -1392,7 +1520,7 @@
             shots.push({ x: tp.x, y: tp.y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd });
             sfx.ufoFire();
             tu.charging = false;
-            tu.fireT = randIn(bc.fireEvery) * rate * (has('jammer') ? 1.4 : 1) * TURRETS.length / 2;
+            tu.fireT = randIn(bc.fireEvery) * rate * TURRETS.length / 2;
           }
         } else {
           tu.fireT -= dt;
@@ -1540,7 +1668,7 @@
     graceT = Math.max(0, graceT - rdt);
     shieldHitT = Math.max(0, shieldHitT - rdt);
     if (playing) { elapsed += rdt; score += rdt * 8; }
-    if (playing) musicTick();
+    if (playing) { musicTick(); checkAch(); }
 
     if (land) updateLanding(rdt);
     else player.a += SPEED * player.dir * rdt;
@@ -1550,6 +1678,7 @@
 
     // debris cadence
     nextDebris -= dt;
+    if (playing) snagT = Math.max(0, snagT - dt);
     if (nextDebris <= 0) {
       if (playing) {
         const d0 = DIFF[difficulty];
@@ -1580,6 +1709,16 @@
       const d = debris[i];
       d.x += d.vx * dt; d.y += d.vy * dt; d.rot += d.spin * dt;
       const dist = Math.hypot(d.x - cx, d.y - cy);
+      if (d.snag) {
+        d.snag -= dt;
+        if (d.snag <= 0) {   // cracks apart
+          burst(d.x, d.y, REDUCE ? 6 : 16, '#FF6B5E', 110 * u);
+          debris.splice(i, 1);
+          continue;
+        }
+      } else if (playing && dist <= R_ORBIT) {
+        trySnag(d);
+      }
       if (dist < R_PLANET) {
         burst(d.x, d.y, 10, '#A8CBE6', 90 * u);
         debris.splice(i, 1);
@@ -1645,12 +1784,12 @@
             const ang = Math.atan2(ppy - uu.y, ppx - uu.x);
             shots.push({
               x: uu.x, y: uu.y,
-              vx: Math.cos(ang) * uc.shotSpeed * u * (has('damper') ? 0.88 : 1),
-              vy: Math.sin(ang) * uc.shotSpeed * u * (has('damper') ? 0.88 : 1),
+              vx: Math.cos(ang) * uc.shotSpeed * u,
+              vy: Math.sin(ang) * uc.shotSpeed * u,
             });
             sfx.ufoFire();
             uu.charging = false;
-            uu.fireTimer = (uc.fireEvery[0] + Math.random() * (uc.fireEvery[1] - uc.fireEvery[0])) * (has('jammer') ? 1.4 : 1);
+            uu.fireTimer = (uc.fireEvery[0] + Math.random() * (uc.fireEvery[1] - uc.fireEvery[0]));
           }
         } else {
           uu.fireTimer -= dt;
@@ -2124,12 +2263,18 @@
     // debris
     for (const d of debris) {
       const len = Math.hypot(d.vx, d.vy);
-      ctx.strokeStyle = 'rgba(92,124,153,.35)';
-      ctx.lineWidth = d.r * 0.5;
-      ctx.beginPath();
-      ctx.moveTo(d.x, d.y);
-      ctx.lineTo(d.x - (d.vx / len) * d.r * 4.5, d.y - (d.vy / len) * d.r * 4.5);
-      ctx.stroke();
+      if (len > 0) {   // a snagged rock isn't moving, so it has no streak
+        ctx.strokeStyle = 'rgba(92,124,153,.35)';
+        ctx.lineWidth = d.r * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(d.x, d.y);
+        ctx.lineTo(d.x - (d.vx / len) * d.r * 4.5, d.y - (d.vy / len) * d.r * 4.5);
+        ctx.stroke();
+      }
+      // snagged: a pulsing red glow, flickering in its last half second
+      const snagged = d.snag > 0;
+      const dying = snagged && d.snag < 0.5;
+      if (dying && Math.floor(t * 14) % 2) continue;
 
       ctx.save();
       ctx.translate(d.x, d.y); ctx.rotate(d.rot);
@@ -2141,8 +2286,16 @@
         i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
       }
       ctx.closePath();
-      ctx.fillStyle = '#26364B'; ctx.fill();
-      ctx.strokeStyle = '#A8CBE6'; ctx.lineWidth = 1.4; ctx.stroke();
+      if (snagged) {
+        const p = 0.6 + 0.4 * Math.sin(t * 9);
+        ctx.shadowColor = '#FF4D5E'; ctx.shadowBlur = (10 + 10 * p) * u;
+        ctx.fillStyle = '#5A1C22'; ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = 'rgba(255,107,94,' + (0.7 + 0.3 * p).toFixed(2) + ')'; ctx.lineWidth = 2 * u; ctx.stroke();
+      } else {
+        ctx.fillStyle = '#26364B'; ctx.fill();
+        ctx.strokeStyle = '#A8CBE6'; ctx.lineWidth = 1.4; ctx.stroke();
+      }
       ctx.restore();
     }
 
