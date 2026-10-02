@@ -953,10 +953,11 @@
   // average seconds between shield pickups -- more frequent on harder
   // tiers, since there's more to survive and more UFOs to eat a hit from
   const SHIELD_DIFF = { easy: 26, normal: 22, hard: 17, extreme: 13 };
-  // shields stack: each pickup adds a layer (up to SHIELD_MAX) and each hit
-  // peels one off. A short grace window after a hit lets you escape the
-  // cluster that caused it instead of losing every layer at once.
-  const SHIELD_MAX = 3, SHIELD_GRACE = 0.6;
+  // shields stack: each pickup adds a layer (up to shieldMax()) and each hit
+  // peels exactly one off -- see shieldAbsorb.
+  // most shield layers you can hold, by difficulty
+  const SHIELD_CAP = { easy: 2, normal: 2, hard: 3, extreme: 4 };
+  const shieldMax = () => SHIELD_CAP[difficulty];
   // slow motion: an hourglass pickup that slows every hazard (not the ship)
   // for SLOW_TIME seconds, then eases time back to full speed
   const SLOW_DIFF = { easy: 32, normal: 28, hard: 24, extreme: 20 };
@@ -1140,7 +1141,7 @@
       buffsAllTime++;
       try { localStorage.setItem('orbit.buffs', String(buffsAllTime)); } catch (e) {}
     }
-    if (it.id === 'patch') shields = Math.min(SHIELD_MAX, shields + 1);
+    if (it.id === 'patch') shields = Math.min(shieldMax(), shields + 1);
     if (it.id === 'moon') moon = { a: 0, cd: 0, x: 0, y: 0 };
     if (it.id === 'nova') novaT = NOVA_EVERY;
   }
@@ -1167,7 +1168,7 @@
     nextUFO = UFO_DIFF[difficulty].spawnEvery[0] * 0.6; ufoGapT = 0;
     nextShield = 5 + Math.random() * 5;
     shieldPickup = null; shields = 0; graceT = 0; shieldHitT = 0;
-    snagT = SNAG_EVERY[difficulty] * 0.6;   // first snag a few seconds in
+    snagT = SNAG[difficulty].every * 0.6;   // first snag a few seconds in
     slowPickup = null; slowT = 0; timeScale = 1; slowVis = 0;
     shieldsGot = 0; slowsGot = 0;
     owned = {}; novas = []; reward = null; hitStopT = 0;
@@ -1382,6 +1383,48 @@
     el.over.classList.remove('hidden');
   }
 
+  // the ship's nose, a ship-length ahead of its centre in the direction it flies
+  function shipNose() {
+    const rot = player.a + player.dir * Math.PI / 2, x = px(), y = py();
+    return { x: x + Math.cos(rot) * SHIP, y: y + Math.sin(rot) * SHIP };
+  }
+  // does the relative path from (ax,ay) to (bx,by) pass within r of the origin?
+  function segNear(ax, ay, bx, by, r) {
+    const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy;
+    const k = L > 0 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L)) : 0;
+    const x = ax + dx * k, y = ay + dy * k;
+    return x * x + y * y < r * r;
+  }
+  // Exact shape test: does a rock's drawn outline overlap the ship's drawn
+  // arrowhead? Both are polygons; they overlap if a corner of one is inside
+  // the other or any two edges cross.
+  const SHIP_SHAPE = [[1.5, 0], [-0.9, 0.78], [-0.45, 0], [-0.9, -0.78]];
+  function inPoly(x, y, poly) {
+    let c = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+      if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c;
+    }
+    return c;
+  }
+  function edgesCross(a, b, c, d) {
+    const o = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+    return o(a, b, c) * o(a, b, d) < 0 && o(c, d, a) * o(c, d, b) < 0;
+  }
+  function rockTouchesShip(rx, ry, d, sx, sy, srot) {
+    const n = d.verts.length, rock = [], ship = [];
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * 6.2832 + d.rot;
+      rock.push([rx + Math.cos(a) * d.r * d.verts[i], ry + Math.sin(a) * d.r * d.verts[i]]);
+    }
+    const c = Math.cos(srot), sn = Math.sin(srot);
+    for (const [x, y] of SHIP_SHAPE) ship.push([sx + (x * c - y * sn) * SHIP, sy + (x * sn + y * c) * SHIP]);
+    for (const p of ship) if (inPoly(p[0], p[1], rock)) return true;
+    for (const p of rock) if (inPoly(p[0], p[1], ship)) return true;
+    for (let i = 0; i < n; i++) for (let j = 0; j < 4; j++)
+      if (edgesCross(rock[i], rock[(i + 1) % n], ship[j], ship[(j + 1) % 4])) return true;
+    return false;
+  }
   // shipRad is only set during the landing, when the ship leaves its orbit
   const px = () => cx + Math.cos(player.a) * (shipRad || R_ORBIT);
   const py = () => cy + Math.sin(player.a) * (shipRad || R_ORBIT);
@@ -1427,27 +1470,48 @@
   /* ---------- spawning ---------- */
   /* ---------- snagged rocks ---------- */
   // Every few seconds, the next regular piece to reach the orbit gets
-  // caught on it: it stops there, glowing red, for SNAG_LIFE, then cracks
-  // apart. Never aimed and never extra -- it's an ordinary piece that
-  // lingers. SNAG_LIFE is longer than one lap of the ship (~2.9s), so a
-  // ship coasting in one direction always runs into it; an active player
-  // just flips away, and with two up you bounce between them.
-  // seconds between snags. EASY/NORMAL lean on them most: their sparse
-  // debris is what let a ship coast. HARD/EXTREME are dense enough to keep
-  // you busy already, so they get fewer, to avoid piling on.
-  const SNAG_EVERY = { easy: 3.0, normal: 3.0, hard: 3.6, extreme: 4.2 };
-  const SNAG_LIFE = 4.5;   // > one lap, and overlapping the next snag, so one is always waiting
+  // caught on it: it glows red there for a while, then cracks apart. Never
+  // aimed and never extra -- it's an ordinary piece that lingers. It stays
+  // longer than one lap of the ship (~2.9s), so a ship coasting in one
+  // direction runs into it; an active player flips away, and with two up
+  // bounces between them.
+  // Per difficulty, one consistent set of knobs:
+  //   every -- seconds between snags
+  //   life  -- how long a caught rock stays. Always > one ship lap (~2.9s),
+  //            so coasting still runs into it
+  //   calm  -- only snag when no more than this many rocks are inbound, so
+  //            heavy waves stay pure dodging (0 = no limit). Set to the
+  //            quieter side of each tier's measured traffic (HARD: median
+  //            ~24 inbound, EXTREME: ~38), so snags turn up in the lulls
+  //   creep -- rad/s the caught rock slides along the orbit (0 = stays put),
+  //            so the safe space keeps shifting
+  // EASY/NORMAL lean on snags (their sparse debris is what let a ship
+  // coast); HARD/EXTREME are dense already, so theirs are lighter -- and
+  // EXTREME's creep instead of sitting still.
+  const SNAG = {
+    easy:    { every: 3.0, life: 4.5, calm: 0,  creep: 0 },
+    normal:  { every: 3.0, life: 4.5, calm: 0,  creep: 0 },
+    hard:    { every: 3.6, life: 3.0, calm: 20, creep: 0 },
+    extreme: { every: 4.2, life: 3.0, calm: 34, creep: 0.32 },
+  };
   const SNAG_SPACING = 1.2;   // radians: never snag this close to another, so you can't be boxed in
   let snagT = 0;
   const angGap = (a, b) => Math.abs(((a - b) % 6.2832 + 9.4248) % 6.2832 - 3.1416);
   function trySnag(d) {
+    const cfg = SNAG[difficulty];
     if (snagT > 0 || boss || land || d.harmless) return false;
+    if (cfg.calm) {
+      let inbound = 0;
+      for (const o of debris) if (!o.harmless && !o.snag) inbound++;
+      if (inbound > cfg.calm) return false;
+    }
     const a = Math.atan2(d.y - cy, d.x - cx);
-    for (const o of debris) if (o.snag && angGap(a, Math.atan2(o.y - cy, o.x - cx)) < SNAG_SPACING) return false;
+    for (const o of debris) if (o.snag && angGap(a, o.snagA) < SNAG_SPACING) return false;
     d.x = cx + Math.cos(a) * R_ORBIT; d.y = cy + Math.sin(a) * R_ORBIT;
     d.vx = 0; d.vy = 0; d.spin *= 0.3;
-    d.snag = SNAG_LIFE;
-    snagT = SNAG_EVERY[difficulty];
+    d.snag = cfg.life; d.snagA = a;
+    d.creep = cfg.creep * (Math.random() < 0.5 ? -1 : 1);
+    snagT = cfg.every;
     return true;
   }
 
@@ -1502,9 +1566,11 @@
     die();
     return 'dead';
   }
+  // A shield absorbs exactly one hit and is gone. No safe window follows:
+  // the hazard that broke it is destroyed by the caller, so it can't land
+  // twice, and anything else that touches you next gets through as normal.
   function shieldAbsorb(x, y) {
     shields--;
-    graceT = SHIELD_GRACE;
     shieldHitT = 0.6;
     shake = Math.max(shake, REDUCE ? 0 : 10 * u);
     burst(x, y, REDUCE ? 10 : 26, '#6FE3FF', 200 * u);
@@ -1743,9 +1809,35 @@
     if (playing) { elapsed += rdt; score += rdt * 8; }
     if (playing) { musicTick(); checkAch(); }
 
+    const spx = px(), spy = py(), sa0 = player.a;
+    const nose0 = shipNose();
     if (land) updateLanding(rdt);
     else player.a += SPEED * player.dir * rdt;
     const ppx = px(), ppy = py();
+    const nose1 = shipNose();
+    // Swept collision: test the whole path each hazard and the ship took
+    // this frame, not just where they ended up. On a slow phone (30fps) a
+    // fast rock and the ship move further between frames than the width of
+    // a glancing overlap, so a per-frame check could skip right over a hit.
+    // Two hit points match what you see: the ship's body, and its nose.
+    const hitsShip = (hx0, hy0, hx1, hy1, hr) =>
+      segNear(hx0 - spx, hy0 - spy, hx1 - ppx, hy1 - ppy, hr + SHIP) ||
+      segNear(hx0 - nose0.x, hy0 - nose0.y, hx1 - nose1.x, hy1 - nose1.y, hr + SHIP * 0.45);
+    // Rocks: the swept circles above are only a quick "is it even close"
+    // check (deliberately generous). When it is, test the rock's actual
+    // outline against the ship's actual shape at several points along the
+    // frame's path -- so a hit is exactly a visible touch, and fast frames
+    // still can't skip over one.
+    const rockHits = (d, hx0, hy0) => {
+      if (!hitsShip(hx0, hy0, d.x, d.y, d.r * 1.25)) return false;
+      const steps = Math.min(24, 1 + Math.ceil(Math.hypot(d.x - hx0 - (ppx - spx), d.y - hy0 - (ppy - spy)) / (SHIP * 0.12)));
+      for (let k = 1; k <= steps; k++) {
+        const f = k / steps, a = sa0 + (player.a - sa0) * f;
+        const sx = cx + Math.cos(a) * (shipRad || R_ORBIT), sy = cy + Math.sin(a) * (shipRad || R_ORBIT);
+        if (rockTouchesShip(hx0 + (d.x - hx0) * f, hy0 + (d.y - hy0) * f, d, sx, sy, a + player.dir * Math.PI / 2)) return true;
+      }
+      return false;
+    };
     player.trail.push({ x: ppx, y: ppy });
     if (player.trail.length > 26) player.trail.shift();
 
@@ -1780,9 +1872,18 @@
     // debris motion
     for (let i = debris.length - 1; i >= 0; i--) {
       const d = debris[i];
+      const hx0 = d.x, hy0 = d.y;
       d.x += d.vx * dt; d.y += d.vy * dt; d.rot += d.spin * dt;
       const dist = Math.hypot(d.x - cx, d.y - cy);
       if (d.snag) {
+        if (d.creep) {
+          const next = d.snagA + d.creep * dt;
+          // never creep into another caught rock's space -- turn around instead
+          let blocked = false;
+          for (const o of debris) if (o !== d && o.snag && angGap(next, o.snagA) < SNAG_SPACING) blocked = true;
+          if (blocked) d.creep = -d.creep; else d.snagA = next;
+          d.x = cx + Math.cos(d.snagA) * R_ORBIT; d.y = cy + Math.sin(d.snagA) * R_ORBIT;
+        }
         d.snag -= dt;
         if (d.snag <= 0) {   // cracks apart
           burst(d.x, d.y, REDUCE ? 6 : 16, '#FF6B5E', 110 * u);
@@ -1799,7 +1900,7 @@
       }
       if (playing) {
         const gap = Math.hypot(d.x - ppx, d.y - ppy);
-        if (gap < d.r + SHIP) {
+        if (rockHits(d, hx0, hy0)) {
           const res = takeHit(d.x, d.y);
           if (res === 'dead') return;
           if (res === 'absorbed') { debris.splice(i, 1); continue; }
@@ -1808,7 +1909,7 @@
           d.near = true; nearCount++; score += 5;
           if (has('echo') && ++echoCount >= 10) {
             echoCount = 0;
-            if (shields < SHIELD_MAX) {
+            if (shields < shieldMax()) {
               shields++;
               float(ppx, ppy - 40 * u, 'ECHO +1', '#6FE3FF');
               sfx.shieldGet();
@@ -1839,6 +1940,7 @@
       const uu = ufos[i];
       uu.age += dt;
       uu.a += uu.spin * dt;
+      const ux0 = uu.x, uy0 = uu.y;
       uu.x = cx + Math.cos(uu.a) * uu.hoverR;
       uu.y = cy + Math.sin(uu.a) * uu.hoverR;
       uu.bob += dt * 3;
@@ -1878,8 +1980,7 @@
           }
         }
 
-        const gapU = Math.hypot(uu.x - ppx, uu.y - ppy);
-        if (gapU < uu.r + SHIP) {
+        if (hitsShip(ux0, uy0, uu.x, uu.y, uu.r)) {
           const res = takeHit(uu.x, uu.y);
           if (res === 'dead') return;
           if (res === 'absorbed') { ufos.splice(i, 1); continue; }
@@ -1890,11 +1991,11 @@
     // UFO shots
     for (let i = shots.length - 1; i >= 0; i--) {
       const s = shots[i];
+      const sx0 = s.x, sy0 = s.y;
       s.x += s.vx * dt; s.y += s.vy * dt;
       if (Math.hypot(s.x - cx, s.y - cy) > spawnR) { shots.splice(i, 1); continue; }
       if (playing) {
-        const gap = Math.hypot(s.x - ppx, s.y - ppy);
-        if (gap < SHIP + 4 * u) {
+        if (hitsShip(sx0, sy0, s.x, s.y, 4 * u)) {
           const res = takeHit(s.x, s.y);
           if (res === 'dead') return;
           if (res === 'absorbed') { shots.splice(i, 1); continue; }
@@ -1906,8 +2007,8 @@
     if (playing) {
       // the countdown only runs while there's room for another layer, so
       // losing a layer never makes a replacement appear instantly
-      if (shields < SHIELD_MAX) nextShield -= dt;
-      if (nextShield <= 0 && !shieldPickup && shields < SHIELD_MAX) {
+      if (shields < shieldMax()) nextShield -= dt;
+      if (nextShield <= 0 && !shieldPickup && shields < shieldMax()) {
         shieldPickup = { a: Math.random() * Math.PI * 2, life: 8 };
         nextShield = SHIELD_DIFF[difficulty] * (0.7 + Math.random() * 0.6);
       }
@@ -1916,7 +2017,7 @@
         const sx = cx + Math.cos(shieldPickup.a) * R_ORBIT, sy = cy + Math.sin(shieldPickup.a) * R_ORBIT;
         if (Math.hypot(sx - ppx, sy - ppy) < pickR()) {
           // a Hull Patch or Echo Shield can top you up while this pickup is out
-          shields = Math.min(SHIELD_MAX, shields + 1); shieldsGot++;
+          shields = Math.min(shieldMax(), shields + 1); shieldsGot++;
           announce(shields > 1 ? 'SHIELD x' + shields : 'SHIELD',
             shields > 1 ? 'BLOCKS THE NEXT ' + shields + ' HITS' : 'BLOCKS THE NEXT HIT', '#6FE3FF');
           burst(sx, sy, 14, '#6FE3FF', 140 * u);
@@ -2079,7 +2180,7 @@
     el.combo.classList.toggle('on', playing && combo > 1);
     el.shieldBadge.classList.toggle('on', playing && (shields > 0 || shieldHitT > 0));
     el.shieldBadge.classList.toggle('hit', shieldHitT > 0);
-    el.shieldV.textContent = '●'.repeat(shields) + '○'.repeat(SHIELD_MAX - shields);
+    el.shieldV.textContent = '●'.repeat(shields) + '○'.repeat(Math.max(0, shieldMax() - shields));
   }
 
   /* ---------- draw ---------- */
