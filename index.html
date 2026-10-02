@@ -72,6 +72,7 @@
   #shieldBadge.on{display:flex}
   #shieldBadge .v{color:#6FE3FF; letter-spacing:.12em}
   #shieldBadge.hit .v{color:var(--danger)}
+  #shieldBadge.empty .v{color:var(--slate)}
   /* game over: what you picked up this run */
   /* victory: the game-over panel, in gold */
   #over.win .eyebrow{color:#FFD24C}
@@ -201,7 +202,7 @@
   .installBtn{
     font-family:var(--mono); font-size:10px; letter-spacing:.22em;
     color:var(--ice); background:transparent; border:1px solid rgba(168,203,230,.45);
-    padding:9px 14px; min-height:40px; margin-top:16px; cursor:pointer;
+    padding:9px 14px; min-height:44px; margin-top:16px; cursor:pointer;
   }
   .installBtn:hover{border-color:var(--ice)}
   .installBtn:focus-visible{outline:2px solid var(--sodium); outline-offset:2px}
@@ -217,7 +218,7 @@
   .achBtn{
     font-family:var(--mono); font-size:10px; letter-spacing:.22em;
     color:#FFD24C; background:transparent; border:1px solid rgba(255,210,76,.45);
-    padding:9px 14px; min-height:40px; margin-top:16px; cursor:pointer;
+    padding:9px 14px; min-height:44px; margin-top:16px; cursor:pointer;
   }
   .achBtn:hover{border-color:#FFD24C}
   /* sound: browsers stay silent until the first tap, so the title screen
@@ -233,13 +234,20 @@
   @keyframes notePulse{50%{opacity:.35; transform:translateY(-2px)}}
   .achBtn:focus-visible{outline:2px solid var(--sodium); outline-offset:2px}
   #achList{display:flex; flex-direction:column; gap:6px; margin:18px 0 6px; text-align:left}
-  .ach{display:flex; gap:12px; align-items:center; padding:10px 12px; border:1px solid var(--line); background:var(--deep)}
+  .ach{display:flex; gap:12px; align-items:center; padding:10px 12px; border:1px solid var(--line);
+    border-left:3px solid #FFD24C; background:rgba(255,210,76,.06)}
   .ach .ico{font-size:18px; width:22px; text-align:center; color:#FFD24C}
+  .ach .txt{flex:1 1 auto; min-width:0}
   .ach .n{font-family:var(--mono); font-size:11px; letter-spacing:.12em; color:var(--flare)}
   .ach .d{font-family:var(--mono); font-size:10px; letter-spacing:.06em; color:var(--slate-lit); margin-top:3px}
-  .ach.locked{opacity:.42}
+  .ach .tag{font-family:var(--mono); font-size:9px; letter-spacing:.18em; color:#FFD24C; white-space:nowrap}
+  .ach.locked{border-left-color:var(--line); background:var(--deep)}
   .ach.locked .ico{color:var(--slate)}
   .ach.locked .n{color:var(--slate-lit)}
+  .ach.locked .d{color:var(--slate)}
+  .ach.locked .tag{color:var(--slate)}
+  .achBar{height:3px; background:var(--line); margin:10px auto 0; max-width:200px}
+  .achBar i{display:block; height:100%; background:#FFD24C}
   #achToast{
     position:absolute; left:50%; top:64px; z-index:4; transform:translate(-50%,-140%);
     pointer-events:none; opacity:0; transition:transform .35s cubic-bezier(.2,.7,.3,1), opacity .35s;
@@ -247,6 +255,7 @@
     font-family:var(--mono); white-space:nowrap; box-shadow:0 0 24px rgba(255,210,76,.25);
   }
   #achToast.show{transform:translate(-50%,0); opacity:1}
+  @media (prefers-reduced-motion:reduce){ #achToast{transition:opacity .2s} }
   #achToast .k{font-size:9px; letter-spacing:.3em; color:#FFD24C}
   #achToast .n{font-size:13px; letter-spacing:.14em; color:var(--flare); margin-top:4px}
   /* dev mode: a toggle under the difficulty picker that reveals god mode
@@ -255,7 +264,7 @@
   .devToggle{
     font-family:var(--mono); font-size:10px; letter-spacing:.22em;
     color:var(--slate); background:transparent; border:1px dashed var(--line);
-    padding:8px 14px; min-height:40px; cursor:pointer;
+    padding:8px 14px; min-height:44px; cursor:pointer;
   }
   .devToggle[aria-pressed="true"]{color:#7CFFC2; border:1px solid #7CFFC2}
   .devToggle:focus-visible,.devOpt:focus-visible{outline:2px solid var(--sodium); outline-offset:2px}
@@ -323,7 +332,7 @@
       <p class="eyebrow">SINGLE-BUTTON ARCADE</p>
       <h1>ORBIT</h1>
       <div class="rule"></div>
-      <p class="blurb">Debris is falling toward the planet. You can only do one thing about it: reverse your orbit. Grab sparks to chain a multiplier, stack up to three shields to survive hits, and catch an hourglass to slow time -- alien saucers will be shooting at you too.</p>
+      <p class="blurb">Debris is falling toward the planet. You can only do one thing about it: reverse your orbit. Grab sparks to chain a multiplier and shields to absorb hits (up to 2 on Easy and Normal, 3 on Hard, 4 on Extreme), and catch an hourglass to slow time -- alien saucers will be shooting at you too.</p>
       <button class="soundBtn" type="button" id="soundBtn"><span class="note">&#9834;</span>TAP FOR SOUND</button>
       <p class="bestLine">BEST <span id="titleBest">0</span></p>
       <button class="achBtn" type="button" data-ach-open>ACHIEVEMENTS <span data-ach-count>0/0</span></button>
@@ -362,6 +371,7 @@
       <button class="closeX" type="button" id="achClose" aria-label="Close achievements">&#10005;</button>
       <p class="eyebrow">ACHIEVEMENTS</p>
       <p class="bestLine">UNLOCKED <span data-ach-count>0/0</span></p>
+      <div class="achBar" aria-hidden="true"><i id="achBarFill"></i></div>
       <div id="achList"></div>
       <button class="prompt" type="button" id="achBack">BACK</button>
     </div>
@@ -1114,19 +1124,32 @@
     { id: 'nova',   name: 'NOVA PULSE',     rarity: 2, weight: 7,  desc: 'EVERY 30S A SHOCKWAVE CLEARS SPACE' },
     { id: 'last',   name: 'LAST STAND',     rarity: 2, weight: 6,  desc: 'SURVIVE ONE FATAL HIT, SHIELDLESS' },
   ];
+  // UI colors, one per meaning, so a color always tells you what a thing is:
+  //   hazard/damage red, shield cyan, temporary (slow-mo) violet, owned
+  //   upgrades rose, achievements gold (gold is used for nothing else in the
+  //   UI). Upgrade rarity is a brighter rose, plus the label.
+  const UI = { hazard: '#FF4D5E', shield: '#6FE3FF', temp: '#B79CFF', upgrade: '#FF8CC6', ach: '#FFD24C', info: '#A8CBE6', score: '#FFE2B0' };
   const RARITY = [
-    { label: 'COMMON',   color: '#A8CBE6' },
-    { label: 'UNCOMMON', color: '#6FE3FF' },
-    { label: 'RARE',     color: '#FFD24C' },
+    { label: 'COMMON',   color: '#F7C6DE' },
+    { label: 'UNCOMMON', color: '#FF9FD0' },
+    { label: 'RARE',     color: '#FF6FB4' },
   ];
   const NOVA_EVERY = 30, MOON_COOLDOWN = 5;
   let owned = {}, novas = [], reward = null, hitStopT = 0;
   // pickup callout: the name, big, below the orbit, plus a few words on
   // what it does -- so you learn what a pickup is without reading the
   // tracker mid-fight
+  // Callouts sit over the planet: the one spot that never covers the ship,
+  // the orbit or anything still dangerous. One at a time -- a new one waits
+  // its turn (briefly) instead of drawing over the last, and everything
+  // waits out a new-planet banner.
   let callout = null;
+  const calloutQ = [];
   const CALLOUT_TIME = 1.7;
-  function announce(name, desc, color) { callout = { t: 0, name, desc, color }; }
+  function announce(name, desc, color) {
+    calloutQ.push({ t: 0, name, desc, color, queued: 0 });
+    if (calloutQ.length > 2) calloutQ.shift();   // keep it brief: never a backlog
+  }
   let moon = null, echoCount = 0, novaT = 0, lastStandUsed = false;
   const has = (id) => !!owned[id];
   function rollItem() {
@@ -1174,7 +1197,7 @@
     shieldsGot = 0; slowsGot = 0;
     owned = {}; novas = []; reward = null; hitStopT = 0;
     moon = null; echoCount = 0; novaT = 0; lastStandUsed = false;
-    buffCount = 0; callout = null;
+    buffCount = 0; callout = null; calloutQ.length = 0;
     nextSlow = SLOW_DIFF[difficulty] * (0.6 + Math.random() * 0.4);
     planetStage = 0;
     boss = null; bossDelay = BOSS_DELAY; land = null; won = false; shipRad = 0;
@@ -1276,7 +1299,7 @@
   /* ---------- achievements ---------- */
   // Earned once, saved on this device. Dev runs never count.
   const ACHIEVEMENTS = [
-    { id: 'orbit30', icon: '\u25CB', name: 'FIRST ORBIT',      desc: 'Survive 30 seconds' },
+    { id: 'orbit30', icon: '\u25CE', name: 'FIRST ORBIT',      desc: 'Survive 30 seconds' },
     { id: 'iron',    icon: '\u25C9', name: 'IRON NERVES',      desc: 'Survive 3 minutes in one run' },
     { id: 'cadet',   icon: '\u2605', name: 'CADET',            desc: 'Reach planet 5 on EASY' },
     { id: 'pilot',   icon: '\u2605', name: 'PILOT',            desc: 'Reach planet 5 on NORMAL' },
@@ -1295,7 +1318,8 @@
     if (devRun || achGot[id]) return;
     achGot[id] = Date.now();
     try { localStorage.setItem('orbit.ach', JSON.stringify(achGot)); } catch (e) {}
-    achToastQ.push(ACHIEVEMENTS.find((a) => a.id === id).name);
+    const a = ACHIEVEMENTS.find((x) => x.id === id);
+    achToastQ.push(a.icon + '  ' + a.name);
     nextAchToast();
     renderAch();
   }
@@ -1321,8 +1345,11 @@
     const n = ACHIEVEMENTS.filter((a) => achGot[a.id]).length;
     document.querySelectorAll('[data-ach-count]').forEach((e) => { e.textContent = n + '/' + ACHIEVEMENTS.length; });
     document.getElementById('achList').innerHTML = ACHIEVEMENTS.map((a) =>
-      '<div class="ach' + (achGot[a.id] ? '' : ' locked') + '"><span class="ico">' + (achGot[a.id] ? a.icon : '\u25CC') +
-      '</span><div><div class="n">' + a.name + '</div><div class="d">' + a.desc + '</div></div></div>').join('');
+      '<div class="ach' + (achGot[a.id] ? '' : ' locked') + '"><span class="ico" aria-hidden="true">' + (achGot[a.id] ? a.icon : '\u25CC') +
+      '</span><div class="txt"><div class="n">' + a.name + '</div><div class="d">' + a.desc + '</div></div>' +
+      '<span class="tag">' + (achGot[a.id] ? 'EARNED' : 'LOCKED') + '</span></div>').join('');
+    const bar = document.getElementById('achBarFill');
+    if (bar) bar.style.width = (100 * n / ACHIEVEMENTS.length) + '%';
   }
   // the list opens over whichever screen you were on, and BACK returns there
   let achFrom = null;
@@ -1558,8 +1585,8 @@
       lastStandUsed = true;
       graceT = 1.6;
       flash = 1;
-      novas.push({ r: R_PLANET, maxR: spawnR + 60, full: true, color: '#FFD24C' });
-      announce('LAST STAND', 'FATAL HIT SURVIVED -- ONCE PER RUN', '#FFD24C');
+      novas.push({ r: R_PLANET, maxR: spawnR + 60, full: true, color: UI.upgrade });
+      announce('LAST STAND', 'FATAL HIT SURVIVED', UI.upgrade);
       sfx.nova();
       if (slowT <= 0) { slowT = slowLen(); sfx.slowIn(); musicSlow(true); }
       return 'absorbed';
@@ -1590,7 +1617,14 @@
       });
     }
   }
+  // floating labels by the ship: a new one lifts above any still showing
+  // nearby, so "+5" and "SHIELD -1" never draw on top of each other
   function float(x, y, text, color) {
+    for (let k = 0; k < 4; k++) {
+      const gap = Math.max(13, 15 * u);   // one line of (min 11px) label text
+      if (!floats.some((f) => Math.abs(f.x - x) < Math.max(60, 50 * u) && Math.abs(f.y - y) < gap - 1)) break;
+      y -= gap;
+    }
     floats.push({ x, y, text, color, life: 0.9 });
   }
 
@@ -1728,7 +1762,7 @@
         sfx.victory();
         const bonus = BOSS_BONUS + shields * SHIELD_BONUS;
         score += bonus;
-        float(cx, boss.y, 'MOTHERSHIP DOWN  +' + bonus.toLocaleString(), '#FFD24C');
+        float(cx, boss.y, 'MOTHERSHIP DOWN  +' + bonus.toLocaleString(), UI.score);
       }
       if (lt >= LASER_END) startLanding();
     }
@@ -2019,8 +2053,8 @@
         if (Math.hypot(sx - ppx, sy - ppy) < pickR()) {
           // a Hull Patch or Echo Shield can top you up while this pickup is out
           shields = Math.min(shieldMax(), shields + 1); shieldsGot++;
-          announce(shields > 1 ? 'SHIELD x' + shields : 'SHIELD',
-            shields > 1 ? 'BLOCKS THE NEXT ' + shields + ' HITS' : 'BLOCKS THE NEXT HIT', '#6FE3FF');
+          announce('SHIELDS ' + shields + '/' + shieldMax(),
+            shields > 1 ? 'BLOCKS THE NEXT ' + shields + ' HITS' : 'BLOCKS THE NEXT HIT', UI.shield);
           burst(sx, sy, 14, '#6FE3FF', 140 * u);
           sfx.shieldGet();
           shieldPickup = null;
@@ -2042,7 +2076,7 @@
         const sx = cx + Math.cos(slowPickup.a) * R_ORBIT, sy = cy + Math.sin(slowPickup.a) * R_ORBIT;
         if (Math.hypot(sx - ppx, sy - ppy) < pickR()) {
           slowT = slowLen(); slowsGot++;
-          announce('SLOW-MO', 'EVERYTHING SLOWS FOR ' + slowLen() + 'S', '#B79CFF');
+          announce('SLOW-MO', 'EVERYTHING SLOWS FOR ' + slowLen() + 'S', UI.temp);
           burst(sx, sy, 16, '#B79CFF', 150 * u);
           sfx.slowIn();
           musicSlow(true);
@@ -2105,8 +2139,9 @@
         // dipped), so no slow-mo hourglass for a while after it
         nextSlow = Math.max(nextSlow, SLOW_AFTER_PLANET);
         const it = rollItem();
+        const rewardFull = shields >= shieldMax();
         grantItem(it);
-        reward = { t: 0, ps, it };
+        reward = { t: 0, ps, it, desc: it.id === 'patch' && rewardFull ? 'SHIELDS ALREADY FULL' : it.desc };
         sfx.reward(it.rarity);
       }
     }
@@ -2140,16 +2175,19 @@
       if (nv.r > nv.maxR) novas.splice(n, 1);
     }
     if (reward) { reward.t += rdt; if (reward.t > 3.6) reward = null; }
-    if (callout) { callout.t += rdt; if (callout.t > CALLOUT_TIME || reward) callout = null; }
+    if (callout) { callout.t += rdt; if (callout.t > CALLOUT_TIME) callout = null; }
+    for (const q of calloutQ) q.queued += rdt;
+    while (calloutQ.length && calloutQ[0].queued > 3) calloutQ.shift();   // stale: drop it
+    if (!callout && !reward && calloutQ.length) callout = calloutQ.shift();
 
     if (playing && has('nova')) {
       novaT -= dt;
       if (novaT <= 0) {
         novaT = NOVA_EVERY;
-        novas.push({ r: R_PLANET, maxR: R_ORBIT * 1.9, full: false, color: '#FFD24C', slow: true });
-        burst(cx, cy, REDUCE ? 10 : 30, '#FFD24C', 220 * u);
+        novas.push({ r: R_PLANET, maxR: R_ORBIT * 1.9, full: false, color: UI.upgrade, slow: true });
+        burst(cx, cy, REDUCE ? 10 : 30, UI.upgrade, 220 * u);
         shake = Math.max(shake, REDUCE ? 0 : 7 * u);
-        announce('NOVA PULSE', 'CLEARED THE SPACE AROUND THE PLANET', '#FFD24C');
+        announce('NOVA PULSE', 'SPACE CLEARED', UI.upgrade);
         sfx.nova();
       }
     }
@@ -2182,7 +2220,9 @@
     el.best.textContent = Math.max(best, Math.floor(score)).toLocaleString();
     el.comboV.textContent = 'x' + combo;
     el.combo.classList.toggle('on', playing && combo > 1);
-    el.shieldBadge.classList.toggle('on', playing && (shields > 0 || shieldHitT > 0));
+    // always shown in play, so you can see how many you hold against the cap
+    el.shieldBadge.classList.toggle('on', playing);
+    el.shieldBadge.classList.toggle('empty', shields === 0 && shieldHitT <= 0);
     el.shieldBadge.classList.toggle('hit', shieldHitT > 0);
     el.shieldV.textContent = '●'.repeat(shields) + '○'.repeat(Math.max(0, shieldMax() - shields));
   }
@@ -2597,8 +2637,8 @@
       // touching down: the nose swings round from flying to pointing up
       if (land) rot += angDiff(rot, player.a) * Math.max(0, Math.min(1, (land.t / LAND_TIME - 0.6) / 0.4));
       ctx.rotate(rot);
-      ctx.shadowColor = lastReady ? '#FFD24C' : '#FF9A3C';
-      ctx.shadowBlur = (lastReady ? 22 + 8 * Math.sin(t * 4) : 16) * u;
+      ctx.shadowColor = lastReady ? UI.upgrade : '#FF9A3C';
+      ctx.shadowBlur = (lastReady ? 22 + (REDUCE ? 0 : 8 * Math.sin(t * 4)) : 16) * u;
       ctx.fillStyle = '#FF9A3C';
       ctx.beginPath();
       ctx.moveTo(SHIP * 1.5, 0);
@@ -2607,7 +2647,7 @@
       ctx.lineTo(-SHIP * 0.9, -SHIP * 0.78);
       ctx.closePath(); ctx.fill();
       ctx.shadowBlur = 0;
-      ctx.fillStyle = lastReady ? '#FFD24C' : '#FFE2B0';
+      ctx.fillStyle = lastReady ? UI.upgrade : '#FFE2B0';
       ctx.beginPath(); ctx.arc(SHIP * 0.35, 0, SHIP * 0.26, 0, 6.2832); ctx.fill();
       ctx.restore();
     }
@@ -2640,7 +2680,7 @@
       ctx.restore();
       // recharging: a small ring fills back up around it
       if (moon.cd > 0) {
-        ctx.strokeStyle = 'rgba(232,235,255,.8)'; ctx.lineWidth = 1.4 * u;
+        ctx.strokeStyle = UI.upgrade; ctx.lineWidth = 1.4 * u;
         ctx.beginPath();
         ctx.arc(moon.x, moon.y, 7.5 * u, -Math.PI / 2, -Math.PI / 2 + (1 - moon.cd / MOON_COOLDOWN) * 6.2832);
         ctx.stroke();
@@ -2653,17 +2693,20 @@
       const f = 1 - Math.max(0, Math.min(1, novaT / NOVA_EVERY));
       const soon = novaT < 3;
       ctx.save();
-      ctx.globalAlpha = soon ? (Math.floor(t * 6) % 2 ? 1 : 0.35) : 0.75;
-      ctx.strokeStyle = '#FFD24C'; ctx.lineWidth = (soon ? 3 : 2) * u; ctx.lineCap = 'round';
+      ctx.globalAlpha = soon ? (REDUCE ? 1 : (Math.floor(t * 6) % 2 ? 1 : 0.35)) : 0.75;
+      ctx.strokeStyle = UI.upgrade; ctx.lineWidth = (soon ? 3 : 2) * u; ctx.lineCap = 'round';
       ctx.beginPath(); ctx.arc(cx, cy, R_PLANET + 9 * u, -Math.PI / 2, -Math.PI / 2 + f * 6.2832); ctx.stroke();
       ctx.restore();
     }
 
     // floating scores
     ctx.textAlign = 'center';
-    ctx.font = 500 + ' ' + Math.round(13 * u) + 'px "IBM Plex Mono", monospace';
+    // never smaller than 11px, or small phones get unreadable 6px labels
+    ctx.font = '500 ' + Math.max(11, Math.round(13 * u)) + 'px "IBM Plex Mono", monospace';
+    ctx.lineJoin = 'round'; ctx.lineWidth = 3 * u; ctx.strokeStyle = 'rgba(7,10,20,.85)';
     for (const f of floats) {
       ctx.globalAlpha = Math.max(0, Math.min(1, f.life * 1.4));
+      ctx.strokeText(f.text, f.x, f.y);   // dark outline: legible on any backdrop
       ctx.fillStyle = f.color;
       ctx.fillText(f.text, f.x, f.y);
     }
@@ -2696,35 +2739,47 @@
       ctx.fillStyle = rar.color;
       ctx.fillText(rar.label + ' UPGRADE', cx, bottom);
       ctx.shadowColor = rar.color; ctx.shadowBlur = reward.it.rarity === 2 ? 16 * u : 6 * u;
-      ctx.font = '700 ' + Math.max(16, Math.round(24 * u)) + 'px Oxanium, "Trebuchet MS", sans-serif';
-      ctx.fillText(reward.it.name, cx, bottom + 26 * u);
+      // line spacing follows the real text sizes (which have minimums), so
+      // the lines can't overlap on small phones
+      const nameSz = Math.max(16, Math.round(24 * u)), descSz = Math.max(10, Math.round(11 * u));
+      ctx.font = '700 ' + nameSz + 'px Oxanium, "Trebuchet MS", sans-serif';
+      ctx.fillText(reward.it.name, cx, bottom + nameSz + 6);
       ctx.shadowBlur = 0;
-      ctx.fillStyle = '#A8CBE6';
-      ctx.font = '400 ' + Math.max(9, Math.round(11 * u)) + 'px "IBM Plex Mono", monospace';
-      ctx.fillText(reward.it.desc, cx, bottom + 46 * u);
+      ctx.fillStyle = '#C9D4E8';
+      ctx.font = '400 ' + descSz + 'px "IBM Plex Mono", monospace';
+      ctx.fillText(reward.desc, cx, bottom + nameSz + descSz + 12);
       ctx.restore();
     }
 
-    // pickup callout, above the orbit -- the bottom of the screen is taken
-    // by the buff tracker, and above is where the new-planet name lands too
+    // callout, centred on the planet (see announce)
     if (callout && !reward) {
       const ct = callout.t;
       const alpha = Math.min(1, ct / 0.12) * Math.min(1, (CALLOUT_TIME - ct) / 0.4);
-      const pop = 1 + 0.2 * Math.max(0, 1 - ct / 0.2);
-      const y = cy - R_ORBIT - 46 * u;
+      const pop = REDUCE ? 1 : 1 + 0.15 * Math.max(0, 1 - ct / 0.2);
+      const nameSize = Math.max(16, Math.round(20 * u)), descSize = Math.max(10, Math.round(10.5 * u));
+      const y = cy - 4 * u;
       ctx.save();
       ctx.globalAlpha = Math.max(0, alpha);
       ctx.textAlign = 'center';
+      // dark backing, kept inside the orbit, so it reads on any backdrop
+      ctx.font = '700 ' + nameSize + 'px Oxanium, "Trebuchet MS", sans-serif';
+      const wName = ctx.measureText(callout.name).width;
+      ctx.font = '500 ' + descSize + 'px "IBM Plex Mono", monospace';
+      const wDesc = ctx.measureText(callout.desc).width;
+      const bw = Math.min(R_ORBIT * 1.7, Math.max(wName, wDesc) + 22 * u), bh = nameSize + descSize + 20 * u;
+      ctx.fillStyle = 'rgba(7,10,20,.78)';
+      ctx.fillRect(cx - bw / 2, y - nameSize - 4 * u, bw, bh);
+      ctx.fillStyle = callout.color;
+      ctx.fillRect(cx - bw / 2, y - nameSize - 4 * u, bw, 2 * u);
       ctx.save();
       ctx.translate(cx, y); ctx.scale(pop, pop);
-      ctx.shadowColor = callout.color; ctx.shadowBlur = 12 * u;
       ctx.fillStyle = callout.color;
-      ctx.font = '700 ' + Math.max(18, Math.round(26 * u)) + 'px Oxanium, "Trebuchet MS", sans-serif';
+      ctx.font = '700 ' + nameSize + 'px Oxanium, "Trebuchet MS", sans-serif';
       ctx.fillText(callout.name, 0, 0);
       ctx.restore();
-      ctx.fillStyle = '#A8CBE6';
-      ctx.font = '400 ' + Math.max(10, Math.round(12 * u)) + 'px "IBM Plex Mono", monospace';
-      ctx.fillText(callout.desc, cx, y + 22 * u);
+      ctx.fillStyle = '#C9D4E8';
+      ctx.font = '500 ' + descSize + 'px "IBM Plex Mono", monospace';
+      ctx.fillText(callout.desc, cx, y + descSize + 6 * u);
       ctx.restore();
     }
 
