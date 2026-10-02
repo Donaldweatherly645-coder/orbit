@@ -777,7 +777,9 @@
   const lerp = (a, b, k) => a + (b - a) * k;
   function ufoPlan() {
     const sc = UFO_SCALE[difficulty], uc = UFO_DIFF[difficulty];
-    const k = Math.pow(planetStage / (PLANET_STAGES.length - 1), 1.15);
+    // spread across the planets, leaning slightly early, so each extra UFO
+    // arrives every few planets rather than all at the very end
+    const k = Math.pow(planetStage / (PLANET_STAGES.length - 1), 0.85);
     let inbound = 0;
     for (const d of debris) if (!d.harmless) inbound++;
     const load = Math.min(1, inbound / DEBRIS_HEAVY);
@@ -786,10 +788,11 @@
     const baseGap = (uc.spawnEvery[0] + uc.spawnEvery[1]) / 2;
     return {
       maxAlive, life,
-      // spawn gap slides from the tier's base toward "fast enough to keep
-      // maxAlive on screen" (lifespan / maxAlive), so later planets really
-      // do have several UFOs up at once
-      spawnGap: lerp(baseGap, life / maxAlive, k),
+      // once more than one UFO is allowed, spawn fast enough to actually
+      // keep that many up (lifespan / maxAlive) -- otherwise each one tends
+      // to leave before the next arrives and you only ever see one
+      // (x1.4 leaves breathing room, so they come and go instead of a permanent fleet)
+      spawnGap: maxAlive > 1 ? Math.min(baseGap, 1.4 * life / maxAlive) : lerp(baseGap, life, k),
       rateCap: lerp(sc.rate[0], sc.rate[1], k) * (1 - 0.4 * load) / (has('jammer') ? 1.4 : 1),
       inFlight: Math.round(lerp(sc.inFlight[0], sc.inFlight[1], k)),
     };
