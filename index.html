@@ -972,7 +972,9 @@
   // for SLOW_TIME seconds, then eases time back to full speed
   const SLOW_DIFF = { easy: 32, normal: 28, hard: 24, extreme: 20 };
   const SLOW_TIME = 3, SLOW_SCALE = 0.4;
-  const SLOW_AFTER_PLANET = 8;   // seconds: no hourglass spawns this soon after a new planet
+  const SLOW_AFTER_PLANET = 8;
+  const PLANET_CLEAR_TIME = 1.0;   // s: a new planet clears hazards this close (in travel time) to the orbit
+  const PLANET_GRACE = 0.6;        // s: hits ignored right after a new planet   // seconds: no hourglass spawns this soon after a new planet
 
   // The finale. A few seconds after the planet reaches its final form, the
   // UFOs' mothership arrives and parks above the orbit. You can't shoot it:
@@ -1948,6 +1950,10 @@
               shields++;
               float(ppx, ppy - 40 * u, 'ECHO +1', '#6FE3FF');
               sfx.shieldGet();
+            } else {
+              // the dots filled but there's no room -- say so, rather than
+              // silently emptying them (looked like the buff had broken)
+              float(ppx, ppy - 40 * u, 'ECHO: SHIELDS FULL', '#7C8DAE');
             }
           }
           shake = Math.max(shake, REDUCE ? 0 : 4 * u);
@@ -2132,10 +2138,16 @@
         burst(cx, cy, REDUCE ? 14 : 60, ps.core, 260 * u);
         burst(cx, cy, REDUCE ? 8 : 30, '#FFFFFF', 180 * u);
         shake = Math.max(shake, REDUCE ? 0 : 9 * u);
-        novas.push({ r: R_PLANET, maxR: spawnR + 60, full: true, color: ps.core });
+        // The reward wave clears what's threatening you -- anything that could
+        // reach the orbit within PLANET_CLEAR_TIME at today's rock/shot speed
+        // -- and leaves distant hazards in play, so a new planet is a breather,
+        // not a full reset. (Nova Pulse is a separate, smaller wave; see below.)
+        const d0 = DIFF[difficulty];
+        const reach = Math.max(Math.min(d0.speedCap, d0.speedBase + elapsed * d0.speedRamp), UFO_DIFF[difficulty].shotSpeed) * u;
+        novas.push({ r: R_PLANET, maxR: R_ORBIT + reach * PLANET_CLEAR_TIME + 14 * u, full: true, color: ps.core });
         hitStopT = 0.5;
-        graceT = Math.max(graceT, 1.2);
-        // a new planet already gives a breather (screen cleared, time
+        graceT = Math.max(graceT, PLANET_GRACE);
+        // a new planet already gives a breather (nearby space cleared, time
         // dipped), so no slow-mo hourglass for a while after it
         nextSlow = Math.max(nextSlow, SLOW_AFTER_PLANET);
         const it = rollItem();
@@ -3041,7 +3053,7 @@
       set: (o) => { if ('shields' in o) shields = o.shields; if ('graceT' in o) graceT = o.graceT;
         if ('elapsed' in o) elapsed = o.elapsed; if ('bossTimer' in o && boss) boss.timer = o.bossTimer;
         if ('bossDelay' in o) bossDelay = o.bossDelay; if ('slowT' in o) slowT = o.slowT;
-        if ('best' in o) best = o.best; if (o.clearAch) { for (const k in achGot) delete achGot[k]; } },
+        if ('novaT' in o) novaT = o.novaT; if ('best' in o) best = o.best; if (o.clearAch) { for (const k in achGot) delete achGot[k]; } },
       grant: (id) => grantItem(ITEMS.find((x) => x.id === id)),
       shieldPickupOnShip: () => { shieldPickup = { a: player.a, life: 8 }; },
       slowPickupOnShip: () => { slowPickup = { a: player.a, life: 8 }; },
@@ -3062,6 +3074,43 @@
         const tx = cx + Math.cos(a) * R_ORBIT, ty = cy + Math.sin(a) * R_ORBIT;
         const sx = tx + Math.cos(a) * fromDist * u, sy = ty + Math.sin(a) * fromDist * u;
         shots.push({ x: sx, y: sy, vx: -Math.cos(a) * v, vy: -Math.sin(a) * v }); },
+      // balance measurements
+      geo: () => ({ R_ORBIT, R_PLANET, spawnR, speed: Math.min(DIFF[difficulty].speedCap, DIFF[difficulty].speedBase + elapsed * DIFF[difficulty].speedRamp) * u, u }),
+      // inbound rocks spread round the ring at a given distance from the planet (in orbit radii)
+      ring(n, at) { const sp = this.geo().speed;
+        for (let k = 0; k < n; k++) { const a = (k / n) * 6.2832 + 0.3, d = R_ORBIT * at;
+          debris.push({ x: cx + Math.cos(a) * d, y: cy + Math.sin(a) * d, vx: -Math.cos(a) * sp, vy: -Math.sin(a) * sp,
+            r: 10 * u, verts: [1,1,1,1,1,1], rot: 0, spin: 0, near: false, harmless: false, tag: at }); } },
+      ufoAt(at, k) { const a = k * 1.7, d = R_ORBIT * at;
+        ufos.push({ a, hoverR: d, spin: 0, x: cx + Math.cos(a) * d, y: cy + Math.sin(a) * d, r: 11 * u, bob: 0, age: 0, charging: false, chargeT: 0, fireTimer: 99, lifespan: 99, tag: at }); },
+      shotAt(at, k) { const a = k * 2.3 + 1, d = R_ORBIT * at;
+        shots.push({ x: cx + Math.cos(a) * d, y: cy + Math.sin(a) * d, vx: 0, vy: 0, tag: at }); },
+      tags: () => ({ debris: debris.map((d) => d.tag), ufos: ufos.map((x) => x.tag), shots: shots.map((x) => x.tag) }),
+      // the soonest any remaining rock reaches the orbit, in seconds
+      soonest() { let best = 1e9; for (const d of debris) { if (d.harmless) continue;
+        const dist = Math.hypot(d.x - cx, d.y - cy) - R_ORBIT, v = Math.hypot(d.vx, d.vy) || 1;
+        best = Math.min(best, Math.max(0, dist) / v); } return best; },
+      novaT: () => novaT, owned: () => Object.keys(owned),
+      // Balance runs: shields work normally, but a fatal hit is counted
+      // instead of ending the run. Logs each upgrade granted and whether
+      // shields were already full at that moment.
+      immortal(blockRewards) {
+        const stats = { deaths: 0, absorbed: 0, rewards: [], echoRestores: 0, slowSeconds: 0 };
+        // always wrap the ORIGINAL functions, even when called again
+        const h = window.__orbit;
+        h._grant = h._grant || grantItem; h._take = h._take || takeHit;
+        const realGrant = h._grant;
+        takeHit = function (x, y) {
+          if (graceT > 0) return 'grace';
+          if (shields > 0) { stats.absorbed++; shieldAbsorb(x, y); return 'absorbed'; }
+          if (has('last') && !lastStandUsed) { lastStandUsed = true; graceT = 1.6; stats.lastStandSaves = (stats.lastStandSaves || 0) + 1; return 'absorbed'; }
+          stats.deaths++; graceT = 0.3; return 'grace';
+        };
+        grantItem = function (it) { stats.rewards.push({ id: it.id, full: shields >= shieldMax() }); if (!blockRewards) realGrant(it); };
+        return stats;
+      },
+      slowActive: () => slowT > 0,
+      mortal() { const h = window.__orbit; if (h._grant) grantItem = h._grant; if (h._take) takeHit = h._take; },
       // audio
       menuStart, menuStop, musicStart, musicStop, musicSlow, mute: () => el.mute.click(),
       hide() { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
