@@ -500,8 +500,10 @@
     touchdown: () => { tone(200, 70, 0.4, 'sine', 0.12); chime([494, 659, 988], 0.09, 0.15, 'triangle', 0.07); },
   };
   /* ---------- music ---------- */
-  // The soundtrack is a recorded song, "Crossing the Meteor Belt" (C minor),
-  // played through Web Audio so the game can still steer it:
+  // The soundtrack is a recorded song -- "Crossing the Meteor Belt" (C minor)
+  // on EASY/NORMAL/HARD, the faster, more intense "Last Save Point" (E-flat
+  // minor) on EXTREME -- played through Web Audio so the game can still
+  // steer it, the same way for both:
   //  - slow motion brakes the song like a tape slowing down (speed and pitch
   //    drop together), with a darker, roomier mix, then glides back up
   //  - grabbing a buff (shield, slow-mo, upgrade) sparkles a bright C major
@@ -509,8 +511,14 @@
   //  - a new planet hits with a cymbal crash and a quick fanfare
   // Each run starts the song from the top; it loops for as long as you last,
   // skipping the silence after its fade-out.
-  const SONG_URL = 'music/crossing-the-meteor-belt.mp3';
-  const SONG_LOOP_END = 172.2;          // seconds: the end of the fade-out
+  // loopEnd: seconds, the end of the song's fade-out (skips the silence
+  // after it). shift: semitones to move the stingers from C so they fit
+  // the song's key.
+  const SONGS = {
+    main:    { url: 'music/crossing-the-meteor-belt.mp3', loopEnd: 172.2, shift: 0 },
+    extreme: { url: 'music/last-save-point.mp3',          loopEnd: 171.6, shift: 3 },
+  };
+  const songFor = () => (difficulty === 'extreme' ? SONGS.extreme : SONGS.main);
   const MUSIC_VOL = 0.6;
   const SONG_LEVEL = 0.5;               // song into the mixer, leaving headroom for stingers
   // stingers are pitched to fit the song's key (C minor)
@@ -519,19 +527,26 @@
   const FANFARE_CHORD = [60, 63, 67];
   const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
-  // fetch the song as soon as the page loads; decode it once there's an
-  // audio context (the first tap), so it's ready by the time a run starts
-  let songBytes = null, songBuf = null, songDecoding = null;
-  try { songBytes = fetch(SONG_URL).then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null); } catch (e) {}
-  function songReady(a) {
-    if (songBuf) return Promise.resolve(songBuf);
-    if (!songDecoding) {
-      songDecoding = Promise.resolve(songBytes)
-        .then((bytes) => bytes && new Promise((res, rej) => a.decodeAudioData(bytes, res, rej)))
-        .then((buf) => (songBuf = buf || null))
-        .catch(() => { songDecoding = null; return null; });
+  // fetch the selected difficulty's song as soon as it's picked (and on page
+  // load); decode it once there's an audio context (the first tap), so it's
+  // ready by the time a run starts. Each song is downloaded at most once,
+  // and only if its difficulty is actually chosen.
+  function songFetch(song) {
+    if (!song.bytes) {
+      try { song.bytes = fetch(song.url).then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null); }
+      catch (e) { song.bytes = Promise.resolve(null); }
     }
-    return songDecoding;
+  }
+  function songReady(a, song) {
+    if (song.buf) return Promise.resolve(song.buf);
+    songFetch(song);
+    if (!song.decoding) {
+      song.decoding = Promise.resolve(song.bytes)
+        .then((bytes) => bytes && new Promise((res, rej) => a.decodeAudioData(bytes, res, rej)))
+        .then((buf) => (song.buf = buf || null))
+        .catch(() => { song.decoding = null; song.bytes = null; return null; });
+    }
+    return song.decoding;
   }
 
   let noiseBuf = null;
@@ -617,7 +632,7 @@
     return { out, echo, verb, tone, bend, wet: vw, send };
   }
 
-  const music = { gain: null, bus: null, src: null, timer: 0, stage: 0, slow: false, run: 0 };
+  const music = { gain: null, bus: null, src: null, timer: 0, stage: 0, slow: false, run: 0, shift: 0 };
   // Slow motion, musically: the song winds down to SLOW_RATE speed like a
   // tape slowing to a stop -- gently at first, then sinking -- its pitch
   // dropping with it while the mix goes dark and roomy. When it ends it
@@ -660,21 +675,21 @@
   function musicBuff() {
     const a = actx;
     if (!a || !music.timer) return;
-    const t = a.currentTime + 0.01, b = music.bus;
+    const t = a.currentTime + 0.01, b = music.bus, k = music.shift;
     SHIMMER.forEach((m, i) => {
-      voice(a, b.out, t + i * 0.06, mtof(m), 0.5, 'triangle', 0.04, 9000).connect(b.echo);
+      voice(a, b.out, t + i * 0.06, mtof(m + k), 0.5, 'triangle', 0.04, 9000).connect(b.echo);
     });
-    swell(a, b, t, mtof(SHIMMER[0]), 1.2, 0.012, 6000);
+    swell(a, b, t, mtof(SHIMMER[0] + k), 1.2, 0.012, 6000);
   }
   // a new planet: cymbal crash, a chord stab and an arpeggio racing upward
   function musicPlanet() {
     const a = actx;
     if (!a || !music.timer) return;
-    const t = a.currentTime + 0.01, b = music.bus;
+    const t = a.currentTime + 0.01, b = music.bus, k = music.shift;
     noiseHit(a, b.out, t, 1.8, 0.12, 'highpass', 5000).connect(b.verb);
-    for (const m of FANFARE_CHORD) swell(a, b, t, mtof(m + 12), 1.4, 0.02, 4500);
+    for (const m of FANFARE_CHORD) swell(a, b, t, mtof(m + 12 + k), 1.4, 0.02, 4500);
     FANFARE.forEach((m, i) => {
-      voice(a, b.out, t + i * 0.07, mtof(m + 12), 0.2, 'square', 0.03, 5000).connect(b.echo);
+      voice(a, b.out, t + i * 0.07, mtof(m + 12 + k), 0.2, 'square', 0.03, 5000).connect(b.echo);
     });
   }
   // the music side of a frame: announce a new planet once slow-mo is over,
@@ -685,12 +700,12 @@
     musicPlanet();
   }
   // start the song from the top (as soon as it's decoded) and loop it
-  function playSong(a, run) {
-    songReady(a).then((buf) => {
+  function playSong(a, run, song) {
+    songReady(a, song).then((buf) => {
       if (!buf || !music.timer || music.run !== run) return;
       const src = a.createBufferSource();
       src.buffer = buf; src.loop = true;
-      src.loopStart = 0; src.loopEnd = Math.min(SONG_LOOP_END, buf.duration);
+      src.loopStart = 0; src.loopEnd = Math.min(song.loopEnd, buf.duration);
       if (music.slow) src.playbackRate.value = SLOW_RATE;
       const lvl = a.createGain(); lvl.gain.value = SONG_LEVEL;
       src.connect(lvl); lvl.connect(music.bus.out);
@@ -707,7 +722,9 @@
     music.gain = g; music.bus = makeBus(a, g);
     music.stage = 0; music.slow = false; music.src = null;
     music.timer = 1; music.run++;
-    playSong(a, music.run);
+    const song = songFor();
+    music.shift = song.shift;
+    playSong(a, music.run, song);
   }
   function musicStop(quick) {
     if (!music.timer) return;
@@ -919,6 +936,7 @@
       const on = b.dataset.diff === id;
       b.setAttribute('aria-pressed', String(on));
     });
+    songFetch(songFor());   // start downloading this difficulty's song now
   }
   diffButtons.forEach((b) => b.addEventListener('click', () => setDifficulty(b.dataset.diff)));
   setDifficulty(difficulty);
