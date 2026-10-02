@@ -195,6 +195,17 @@
     padding:9px 14px; min-height:40px; margin-top:16px; cursor:pointer;
   }
   .achBtn:hover{border-color:#FFD24C}
+  /* sound: browsers stay silent until the first tap, so the title screen
+     offers one -- styled like the other controls, gone once sound is on */
+  .soundBtn{
+    font-family:var(--mono); font-size:11px; letter-spacing:.22em;
+    color:var(--ice); background:transparent; border:1px solid rgba(168,203,230,.45);
+    padding:10px 16px; min-height:44px; margin:2px 0 6px; cursor:pointer;
+  }
+  .soundBtn:hover{border-color:var(--ice)}
+  .soundBtn:focus-visible{outline:2px solid var(--sodium); outline-offset:2px}
+  .soundBtn .note{display:inline-block; margin-right:8px; animation:notePulse 1.6s ease-in-out infinite}
+  @keyframes notePulse{50%{opacity:.35; transform:translateY(-2px)}}
   .achBtn:focus-visible{outline:2px solid var(--sodium); outline-offset:2px}
   #achList{display:flex; flex-direction:column; gap:6px; margin:18px 0 6px; text-align:left}
   .ach{display:flex; gap:12px; align-items:center; padding:10px 12px; border:1px solid var(--line); background:var(--deep)}
@@ -288,6 +299,7 @@
       <h1>ORBIT</h1>
       <div class="rule"></div>
       <p class="blurb">Debris is falling toward the planet. You can only do one thing about it: reverse your orbit. Grab sparks to chain a multiplier, stack up to three shields to survive hits, and catch an hourglass to slow time -- alien saucers will be shooting at you too.</p>
+      <button class="soundBtn" type="button" id="soundBtn"><span class="note">&#9834;</span>TAP FOR SOUND</button>
       <p class="bestLine">BEST <span id="titleBest">0</span></p>
       <button class="achBtn" type="button" data-ach-open>ACHIEVEMENTS <span data-ach-count>0/0</span></button>
       <p class="diffLabel">DIFFICULTY</p>
@@ -2727,6 +2739,8 @@
       } catch (e) {}
     }
     if (state === 'menu' || state === 'over') menuStart();
+    // sound is on now, so the TAP FOR SOUND button has done its job
+    document.getElementById('soundBtn').classList.add('hidden');
   }
   for (const ev of ['pointerup', 'touchend', 'click']) window.addEventListener(ev, unlockAudio, { capture: true, passive: true });
 
