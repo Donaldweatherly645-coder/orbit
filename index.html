@@ -1082,7 +1082,6 @@
     owned = {}; novas = []; reward = null; hitStopT = 0;
     moon = null; echoCount = 0; novaT = 0; lastStandUsed = false;
     buffCount = 0; callout = null;
-    lastInput = 0; idleAimed = false;
     nextSlow = SLOW_DIFF[difficulty] * (0.6 + Math.random() * 0.4);
     planetStage = 0;
     boss = null; bossDelay = BOSS_DELAY; land = null; won = false; shipRad = 0;
@@ -1230,7 +1229,7 @@
       }
     }
     if (state === 'play') {
-      player.dir *= -1; sfx.flip(); noteInput();
+      player.dir *= -1; sfx.flip();
       player.trail.length = 0;
     } else if (state === 'menu') {
       start();
@@ -1251,106 +1250,20 @@
   });
 
   /* ---------- spawning ---------- */
-  const debrisSpeed = () => {
+  function spawnDebris(harmless) {
+    const a = Math.random() * Math.PI * 2;
     const d0 = DIFF[difficulty];
-    return Math.min(d0.speedCap, d0.speedBase + elapsed * d0.speedRamp) * (has('damper') ? 0.88 : 1) * u;
-  };
-  function spawnDebris(harmless, angle, speedOverride, fromDist) {
-    const a = angle !== undefined ? angle : Math.random() * Math.PI * 2;
-    const speed = harmless ? 70 * u : (speedOverride || debrisSpeed());
+    const speed = (harmless ? 70 : Math.min(d0.speedCap, d0.speedBase + elapsed * d0.speedRamp) * (has('damper') ? 0.88 : 1)) * u;
     const r = (8 + Math.random() * 7) * u;
     const verts = [];
     const n = 6 + Math.floor(Math.random() * 3);
     for (let i = 0; i < n; i++) verts.push(0.7 + Math.random() * 0.5);
-    const R0 = fromDist || spawnR;
     debris.push({
-      x: cx + Math.cos(a) * R0, y: cy + Math.sin(a) * R0,
+      x: cx + Math.cos(a) * spawnR, y: cy + Math.sin(a) * spawnR,
       vx: -Math.cos(a) * speed, vy: -Math.sin(a) * speed,
       r, verts, rot: Math.random() * 6.28, spin: (Math.random() - 0.5) * 1.6,
       near: false, harmless: !!harmless,
     });
-    return debris[debris.length - 1];
-  }
-
-  /* ---------- no idle orbits ---------- */
-  // Left alone, the ship circling in one direction usually survives: random
-  // debris rarely crosses the orbit right where the ship is passing. So
-  // after every flip, one of the debris the game was going to send anyway
-  // is aimed at the spot the ship will reach IDLE_LIMIT seconds later if it
-  // keeps going -- and the next regular spawn is skipped to pay for it, so
-  // there's no extra debris. Keep playing and it misses; sit still and it
-  // lands on you. It flies in like any other piece, with the usual red
-  // landing arc on the ring.
-  // when the aimed piece arrives -- a touch under 3s everywhere, since a
-  // piece can clip the ship a moment before its exact arrival
-  const IDLE_LIMIT = { easy: 2.7, normal: 2.5, hard: 2.3, extreme: 2.1 };   // seconds
-  // distance from the planet to just past the screen edge, along angle a
-  // (aimed pieces enter from the nearest edge, not the far corner, so even
-  // slow EASY debris can arrive in time)
-  function edgeDist(a) {
-    const c = Math.abs(Math.cos(a)), sn = Math.abs(Math.sin(a));
-    const toX = c > 1e-6 ? (c > 0 ? Math.max(cx, W - cx) / c : Infinity) : Infinity;
-    const toY = sn > 1e-6 ? Math.max(cy, H - cy) / sn : Infinity;
-    return Math.min(toX, toY, spawnR) + 30 * u;
-  }
-  let lastInput = 0, idleAimed = false, idleRef = null;
-  const IDLE_MIN = 1.0;   // seconds without input before anything is aimed at you
-  // any input releases every aimed piece: it stops correcting its course
-  // and flies straight on, so a flip always gets you out of its way
-  function noteInput() {
-    lastInput = elapsed; idleAimed = false;
-    for (const d of debris) d.steer = false;
-  }
-  // While you sit still, an aimed piece makes tiny course corrections to
-  // stay on the spot your ship will reach (a few degrees at most -- the
-  // aim is already close, but tiny timing drift adds up over a 3-4s fall)
-  function steerAimed(d) {
-    const dist = Math.hypot(d.x - cx, d.y - cy);
-    if (dist <= R_ORBIT) { d.steer = false; return; }
-    const spd = Math.hypot(d.vx, d.vy) * Math.max(timeScale, 0.05);   // px per real second
-    const want0 = player.a + SPEED * player.dir * ((dist - R_ORBIT) / spd);
-    // never more than a fraction of a degree per frame, so it can't visibly jump
-    const cur = Math.atan2(d.y - cy, d.x - cx);
-    const diff = ((want0 - cur) % 6.2832 + 9.4248) % 6.2832 - 3.1416;
-    const want = cur + Math.max(-0.012, Math.min(0.012, diff));
-    d.x = cx + Math.cos(want) * dist; d.y = cy + Math.sin(want) * dist;
-    const v = Math.hypot(d.vx, d.vy);
-    d.vx = -Math.cos(want) * v; d.vy = -Math.sin(want) * v;
-  }
-  function idleDirector() {
-    // still idle well after the last aimed piece was due (a shield ate it,
-    // or it clipped past): keep the pressure on with another
-    if (idleAimed && elapsed - lastInput > IDLE_LIMIT[difficulty] + 0.6) { lastInput = elapsed - 0.6; idleAimed = false; }
-    // the aimed piece is gone (a shockwave cleared it, or a shield ate it)
-    // and you still haven't moved: send the next one straight away
-    if (idleAimed && idleRef && !debris.includes(idleRef)) { lastInput = elapsed - IDLE_LIMIT[difficulty]; idleAimed = false; idleRef = null; }
-    if (idleAimed || boss || land || slowT > 0 || hitStopT > 0) return;
-    // only once you've genuinely stopped -- an active player flipping every
-    // second or so never gets an aimed piece at all
-    if (elapsed - lastInput < IDLE_MIN) return;
-    const arrive = lastInput + IDLE_LIMIT[difficulty];
-    const left = arrive - elapsed;
-    const base = debrisSpeed();
-    // The entry distance depends on the angle and the landing angle depends
-    // on the travel time, so solve them together: a few rounds converge.
-    // Launch once a normal-speed piece would only just make it; if it's
-    // already too late for that, launch now, up to 1.6x faster to catch up.
-    const solve = (spd) => {
-      let ang = player.a, from = 0, travel = 0;
-      for (let k = 0; k < 5; k++) {
-        from = edgeDist(ang);
-        const v = spd || Math.min(base * 1.6, Math.max(base, (from - R_ORBIT) / Math.max(left, 0.5)));
-        travel = (from - R_ORBIT) / v;
-        ang = player.a + SPEED * player.dir * travel;
-        if (k === 4) return { ang, from, travel, v };
-      }
-    };
-    if (left > solve(base).travel) return;
-    const sol = solve(0);
-    const aimed = spawnDebris(false, sol.ang, sol.v, sol.from);
-    aimed.steer = true;
-    idleAimed = true; idleRef = aimed;
-    nextDebris += Math.max(DIFF[difficulty].cadenceFloor, DIFF[difficulty].cadenceBase - elapsed * DIFF[difficulty].cadenceRamp);
   }
   function spawnSpark() {
     sparks.push({ a: Math.random() * Math.PI * 2, life: 7, t: 0 });
@@ -1635,7 +1548,6 @@
     player.trail.push({ x: ppx, y: ppy });
     if (player.trail.length > 26) player.trail.shift();
 
-    if (playing) idleDirector();
     // debris cadence
     nextDebris -= dt;
     if (nextDebris <= 0) {
@@ -1666,7 +1578,6 @@
     // debris motion
     for (let i = debris.length - 1; i >= 0; i--) {
       const d = debris[i];
-      if (d.steer && playing) steerAimed(d);
       d.x += d.vx * dt; d.y += d.vy * dt; d.rot += d.spin * dt;
       const dist = Math.hypot(d.x - cx, d.y - cy);
       if (dist < R_PLANET) {
