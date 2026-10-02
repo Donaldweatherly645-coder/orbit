@@ -69,7 +69,7 @@ Each toggle stays as you left it, across runs and visits, until you switch it of
 
 ## Install it on your phone
 
-Orbit works as a Home Screen app: it gets its own icon, opens full screen with no browser bars, and keeps working offline.
+Orbit works as a Home Screen app: it gets its own icon, opens full screen with no browser bars, and keeps working offline. On the title screen, **PLAY OFFLINE** installs it directly on Android, and on iPhone opens a short how-to (Apple doesn't let websites add themselves to the Home Screen).
 
 - **iPhone / iPad (Safari):** open the game, tap **Share**, then **Add to Home Screen**.
 - **Android (Chrome):** open the menu (⋮), then **Install app** or **Add to Home screen**.
