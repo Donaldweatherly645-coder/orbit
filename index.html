@@ -601,6 +601,7 @@
     },
     nova: () => { tone(90, 40, 0.5, 'sine', 0.16); hiss(0.4, 0.06); },
     moonHit: () => tone(900, 300, 0.12, 'square', 0.05),
+    moonReady: () => tone(1320, 1760, 0.07, 'sine', 0.03),
     // the mothership: a low siren on arrival, a hum before each beam
     bossSiren: () => { tone(180, 360, 0.6, 'sawtooth', 0.07); tone(360, 180, 0.6, 'sawtooth', 0.05); },
     beamWarn:  () => tone(220, 260, 0.3, 'square', 0.04),
@@ -1151,12 +1152,12 @@
   // upgrade is one per run (Hull Patch aside, which can repeat) and aimed at
   // what the rising difficulty throws next -- helpful, never run-carrying.
   const ITEMS = [
-    { id: 'patch',  name: 'HULL PATCH',     rarity: 0, weight: 30, repeat: true, desc: '+1 SHIELD LAYER' },
-    { id: 'chrono', name: 'CHRONO CORE',    rarity: 1, weight: 15, desc: 'SLOW-MO LASTS 5S, SHOWS UP MORE' },
-    { id: 'echo',   name: 'ECHO SHIELD',    rarity: 1, weight: 12, desc: '10 NEAR MISSES RESTORE A SHIELD' },
-    { id: 'moon',   name: 'GUARDIAN MOON',  rarity: 2, weight: 7,  desc: 'A MOON CIRCLES YOU, SMASHING DEBRIS' },
-    { id: 'nova',   name: 'NOVA PULSE',     rarity: 2, weight: 7,  desc: 'EVERY 30S A SHOCKWAVE CLEARS SPACE' },
-    { id: 'last',   name: 'LAST STAND',     rarity: 2, weight: 6,  desc: 'SURVIVE ONE FATAL HIT, SHIELDLESS' },
+    { id: 'patch',  name: 'HULL PATCH',     rarity: 0, weight: 30, repeat: true, desc: '+1 SHIELD, RIGHT NOW' },
+    { id: 'chrono', name: 'CHRONO CORE',    rarity: 1, weight: 15, desc: 'SLOW-MO 5S \u00b7 HOURGLASS 30% SOONER' },
+    { id: 'echo',   name: 'ECHO SHIELD',    rarity: 1, weight: 12, desc: '10 NEAR MISSES = +1 SHIELD' },
+    { id: 'moon',   name: 'GUARDIAN MOON',  rarity: 2, weight: 7,  desc: 'SMASHES 1 ROCK \u00b7 5S RECHARGE' },
+    { id: 'nova',   name: 'NOVA PULSE',     rarity: 2, weight: 7,  desc: 'EVERY 30S: CLEARS NEAR THE PLANET' },
+    { id: 'last',   name: 'LAST STAND',     rarity: 2, weight: 6,  desc: 'SURVIVE 1 FATAL HIT + SLOW-MO' },
   ];
   // UI colors, one per meaning, so a color always tells you what a thing is:
   //   hazard/damage red, shield cyan, temporary (slow-mo) violet, owned
@@ -1184,10 +1185,15 @@
     calloutQ.push({ t: 0, name, desc, color, queued: 0 });
     if (calloutQ.length > 2) calloutQ.shift();   // keep it brief: never a backlog
   }
-  let moon = null, echoCount = 0, novaT = 0, lastStandUsed = false;
+  let moon = null, echoCount = 0, echoBank = 0, novaT = 0, lastStandUsed = false;
   const has = (id) => !!owned[id];
+  // Hull Patch is only offered when there's room for the shield, so a
+  // reward is never wasted. Nothing eligible (every one-off owned, shields
+  // full) returns null: the caller pays a small score bonus instead.
+  const PATCH_BONUS = 250;
   function rollItem() {
-    const pool = ITEMS.filter((it) => it.repeat || !owned[it.id]);
+    const pool = ITEMS.filter((it) => it.repeat ? shields < shieldMax() : !owned[it.id]);
+    if (!pool.length) return null;
     let r = Math.random() * pool.reduce((sum, it) => sum + it.weight, 0);
     for (const it of pool) { r -= it.weight; if (r <= 0) return it; }
     return pool[0];
@@ -1199,11 +1205,27 @@
       buffsAllTime++;
       try { localStorage.setItem('orbit.buffs', String(buffsAllTime)); } catch (e) {}
     }
-    if (it.id === 'patch') shields = Math.min(shieldMax(), shields + 1);
-    if (it.id === 'moon') moon = { a: 0, cd: 0, x: 0, y: 0 };
+    if (it.id === 'patch') {
+      shields = Math.min(shieldMax(), shields + 1);
+      if (state === 'play') { shieldGainFx('SHIELD +1'); }
+    }
+    if (it.id === 'moon') moon = { a: 0, cd: 0, x: 0, y: 0, intro: 1.6, ping: 0 };
     if (it.id === 'nova') novaT = NOVA_EVERY;
   }
   const slowLen = () => has('chrono') ? 5 : SLOW_TIME;
+  // Echo Shield: a near miss lights a dot; ten restore a shield. With no
+  // room, one charge banks (paid out the moment there is room). Only one:
+  // while a charge is banked the dots stop one short of full.
+  function echoNearMiss() {
+    if (!has('echo') || echoCount >= (echoBank ? 9 : 10) || ++echoCount < 10) return;
+    if (shields < shieldMax()) { echoCount = 0; shields++; shieldGainFx('ECHO +1'); }
+    else if (!echoBank) { echoCount = 0; echoBank = 1; float(px(), py() - 40 * u, 'ECHO BANKED', UI.shield); sfx.near(); }
+  }
+  function shieldGainFx(text) {
+    float(px(), py() - 40 * u, text, UI.shield);
+    burst(px(), py(), REDUCE ? 8 : 22, UI.shield, 140 * u);
+    sfx.shieldGet();
+  }
   const SLOW_COLOR = '#B79CFF';
   function renderOverBuffs() {
     const chips = [];
@@ -1230,7 +1252,7 @@
     slowPickup = null; slowT = 0; timeScale = 1; slowVis = 0;
     shieldsGot = 0; slowsGot = 0;
     owned = {}; novas = []; reward = null; hitStopT = 0;
-    moon = null; echoCount = 0; novaT = 0; lastStandUsed = false;
+    moon = null; echoCount = 0; echoBank = 0; novaT = 0; lastStandUsed = false;
     buffCount = 0; callout = null; calloutQ.length = 0;
     nextSlow = SLOW_DIFF[difficulty] * (0.6 + Math.random() * 0.4);
     planetStage = 0;
@@ -1296,7 +1318,7 @@
       // the skipped planets would have paid out; the next frame does the
       // usual planet-up (banner, one more upgrade, fanfare) for this one
       elapsed = STAGE_THRESH[difficulty][lv - 1];
-      for (let i = 1; i < lv - 1; i++) grantItem(rollItem());
+      for (let i = 1; i < lv - 1; i++) { const it = rollItem(); if (it) grantItem(it); }
       planetStage = lv - 2;
       if (lv === LAST) bossDelay = 3;
     }
@@ -1618,15 +1640,26 @@
   // What a lethal touch does: nothing during the post-hit grace window,
   // peel off a shield layer if there is one, otherwise end the run.
   // Returns 'grace', 'absorbed' or 'dead'.
+  const LAST_STAND_GRACE = 0.8;
+  const LAST_STAND_R = () => R_ORBIT * 0.75;
+  function clearNear(x0, y0, r) {
+    const near = (o) => Math.hypot(o.x - x0, o.y - y0) < r;
+    for (let i = debris.length - 1; i >= 0; i--) if (near(debris[i])) { burst(debris[i].x, debris[i].y, REDUCE ? 2 : 8, UI.upgrade, 100 * u); debris.splice(i, 1); }
+    for (let i = shots.length - 1; i >= 0; i--) if (near(shots[i])) shots.splice(i, 1);
+    for (let i = ufos.length - 1; i >= 0; i--) if (near(ufos[i])) { burst(ufos[i].x, ufos[i].y, REDUCE ? 6 : 18, UI.upgrade, 140 * u); ufos.splice(i, 1); }
+    burst(x0, y0, REDUCE ? 10 : 34, UI.upgrade, r * 1.6);
+  }
   function takeHit(x, y) {
     if (graceT > 0 || devGod()) return 'grace';
     if (shields > 0) { shieldAbsorb(x, y); return 'absorbed'; }
     if (has('last') && !lastStandUsed) {
-      // the save: clear the screen, slow time, and get a moment to breathe
+      // the save: the hit is cancelled (the caller removes what hit you),
+      // the danger right on top of you is cleared, and time slows. The rest
+      // of the field stays in play.
       lastStandUsed = true;
-      graceT = 1.6;
+      graceT = LAST_STAND_GRACE;
       flash = 1;
-      novas.push({ r: R_PLANET, maxR: spawnR + 60, full: true, color: UI.upgrade });
+      clearNear(px(), py(), LAST_STAND_R());
       announce('LAST STAND', 'FATAL HIT SURVIVED', UI.upgrade);
       sfx.nova();
       if (slowT <= 0) { slowT = slowLen(); sfx.slowIn(); musicSlow(true); }
@@ -1983,18 +2016,7 @@
         }
         if (!d.near && gap < d.r + SHIP + 26 * u) {
           d.near = true; nearCount++; score += 5;
-          if (has('echo') && ++echoCount >= 10) {
-            echoCount = 0;
-            if (shields < shieldMax()) {
-              shields++;
-              float(ppx, ppy - 40 * u, 'ECHO +1', '#6FE3FF');
-              sfx.shieldGet();
-            } else {
-              // the dots filled but there's no room -- say so, rather than
-              // silently emptying them (looked like the buff had broken)
-              float(ppx, ppy - 40 * u, 'ECHO: SHIELDS FULL', '#7C8DAE');
-            }
-          }
+          echoNearMiss();
           shake = Math.max(shake, REDUCE ? 0 : 4 * u);
           float(ppx, ppy - 22 * u, '+5', '#A8CBE6');
           sfx.near();
@@ -2121,7 +2143,7 @@
         const sx = cx + Math.cos(slowPickup.a) * R_ORBIT, sy = cy + Math.sin(slowPickup.a) * R_ORBIT;
         if (Math.hypot(sx - ppx, sy - ppy) < pickR()) {
           slowT = slowLen(); slowsGot++;
-          announce('SLOW-MO', 'EVERYTHING SLOWS FOR ' + slowLen() + 'S', UI.temp);
+          announce(has('chrono') ? 'SLOW-MO + CHRONO' : 'SLOW-MO', 'EVERYTHING SLOWS FOR ' + slowLen() + 'S', UI.temp);
           burst(sx, sy, 16, '#B79CFF', 150 * u);
           sfx.slowIn();
           musicSlow(true);
@@ -2190,10 +2212,16 @@
         // dipped), so no slow-mo hourglass for a while after it
         nextSlow = Math.max(nextSlow, SLOW_AFTER_PLANET);
         const it = rollItem();
-        const rewardFull = shields >= shieldMax();
-        grantItem(it);
-        reward = { t: 0, ps, it, desc: it.id === 'patch' && rewardFull ? 'SHIELDS ALREADY FULL' : it.desc };
-        sfx.reward(it.rarity);
+        if (it) {
+          grantItem(it);
+          reward = { t: 0, ps, it, desc: it.desc };
+        } else {
+          // nothing left that would help: a modest score bonus, not a dud
+          score += PATCH_BONUS;
+          float(ppx, ppy - 40 * u, '+' + PATCH_BONUS, UI.score);
+          reward = { t: 0, ps, it: ITEMS[0], desc: 'SHIELDS FULL \u00b7 +' + PATCH_BONUS + ' SCORE' };
+        }
+        sfx.reward(reward.it.rarity);
       }
     }
 
@@ -2212,10 +2240,11 @@
       const inside = (o) => Math.hypot(o.x - cx, o.y - cy) < nv.r;
       for (let i = debris.length - 1; i >= 0; i--) {
         if (!inside(debris[i])) continue;
-        burst(debris[i].x, debris[i].y, REDUCE ? 2 : 6, '#A8CBE6', 90 * u);
+        burst(debris[i].x, debris[i].y, REDUCE ? 2 : 6, nv.slow ? UI.upgrade : '#A8CBE6', 90 * u);
         debris.splice(i, 1);
+        nv.hits = (nv.hits || 0) + 1;
       }
-      for (let i = shots.length - 1; i >= 0; i--) if (inside(shots[i])) shots.splice(i, 1);
+      for (let i = shots.length - 1; i >= 0; i--) if (inside(shots[i])) { shots.splice(i, 1); nv.hits = (nv.hits || 0) + 1; }
       if (nv.full) {
         for (let i = ufos.length - 1; i >= 0; i--) {
           if (!inside(ufos[i])) continue;
@@ -2223,7 +2252,10 @@
           ufos.splice(i, 1);
         }
       }
-      if (nv.r > nv.maxR) novas.splice(n, 1);
+      if (nv.r > nv.maxR) {
+        if (nv.slow && state === 'play') float(cx, cy - R_PLANET - 18 * u, nv.hits ? 'NOVA \u00d7' + nv.hits : 'NOVA: ALL CLEAR', UI.upgrade);
+        novas.splice(n, 1);
+      }
     }
     if (reward) { reward.t += rdt; if (reward.t > 3.6) reward = null; }
     if (callout) { callout.t += rdt; if (callout.t > CALLOUT_TIME) callout = null; }
@@ -2231,6 +2263,9 @@
     while (calloutQ.length && calloutQ[0].queued > 3) calloutQ.shift();   // stale: drop it
     if (!callout && !reward && calloutQ.length) callout = calloutQ.shift();
 
+    if (playing && has('echo') && shields < shieldMax()) {
+      if (echoBank) { echoBank = 0; shields++; shieldGainFx('ECHO +1'); }
+    }
     if (playing && has('nova')) {
       novaT -= dt;
       if (novaT <= 0) {
@@ -2238,7 +2273,7 @@
         novas.push({ r: R_PLANET, maxR: R_ORBIT * 1.9, full: false, color: UI.upgrade, slow: true });
         burst(cx, cy, REDUCE ? 10 : 30, UI.upgrade, 220 * u);
         shake = Math.max(shake, REDUCE ? 0 : 7 * u);
-        announce('NOVA PULSE', 'SPACE CLEARED', UI.upgrade);
+        announce('NOVA PULSE', 'CLEARING NEAR THE PLANET', UI.upgrade);
         sfx.nova();
       }
     }
@@ -2246,14 +2281,20 @@
     // touches, then needs a few seconds to recharge
     if (moon) {
       moon.a += 3.2 * rdt;
+      const wasCd = moon.cd > 0;
       moon.cd = Math.max(0, moon.cd - dt);
+      if (wasCd && moon.cd <= 0) { moon.ping = 0.5; sfx.moonReady(); }
+      moon.ping = Math.max(0, moon.ping - dt);
+      moon.intro = Math.max(0, moon.intro - dt);
       moon.x = ppx + Math.cos(moon.a) * SHIP * 4.2;
       moon.y = ppy + Math.sin(moon.a) * SHIP * 4.2;
       if (playing && moon.cd <= 0) {
         for (let i = debris.length - 1; i >= 0; i--) {
           const d = debris[i];
           if (Math.hypot(d.x - moon.x, d.y - moon.y) < d.r + 6 * u) {
-            burst(d.x, d.y, REDUCE ? 4 : 14, '#E8EBFF', 120 * u);
+            burst(d.x, d.y, REDUCE ? 6 : 24, '#E8EBFF', 170 * u);
+            float(d.x, d.y - 14 * u, 'SMASH', '#E8EBFF');
+            shake = Math.max(shake, REDUCE ? 0 : 4 * u);
             debris.splice(i, 1);
             moon.cd = MOON_COOLDOWN;
             sfx.moonHit();
@@ -2526,6 +2567,10 @@
       ctx.moveTo(sx - k * 0.8, sy - k); ctx.lineTo(sx + k * 0.8, sy - k);
       ctx.lineTo(sx - k * 0.8, sy + k); ctx.lineTo(sx + k * 0.8, sy + k);
       ctx.closePath(); ctx.stroke();
+      if (has('chrono')) {
+        ctx.shadowBlur = 0; ctx.strokeStyle = UI.upgrade; ctx.lineWidth = 1.4 * u;
+        ctx.beginPath(); ctx.arc(sx, sy, k * 1.9, 0, 6.2832); ctx.stroke();
+      }
       ctx.restore();
     }
 
@@ -2680,6 +2725,11 @@
           ctx.fillStyle = '#6FE3FF';
           ctx.beginPath(); ctx.arc(Math.cos(a) * SHIP * 5.2, Math.sin(a) * SHIP * 5.2, 1.4 * u, 0, 6.2832); ctx.fill();
         }
+        if (echoBank) {
+          ctx.globalAlpha = REDUCE ? 0.8 : 0.55 + 0.35 * Math.sin(t * 4);
+          ctx.strokeStyle = '#6FE3FF'; ctx.lineWidth = 1.4 * u;
+          ctx.beginPath(); ctx.arc(0, 0, SHIP * 5.2, 0, 6.2832); ctx.stroke();
+        }
         ctx.globalAlpha = 1;
       }
       // last stand, while it's still in hand, turns the ship's glow gold
@@ -2735,6 +2785,16 @@
         ctx.beginPath();
         ctx.arc(moon.x, moon.y, 7.5 * u, -Math.PI / 2, -Math.PI / 2 + (1 - moon.cd / MOON_COOLDOWN) * 6.2832);
         ctx.stroke();
+      }
+      // arriving, or ready again: a ring opens out around it
+      const ring = moon.intro > 0 ? moon.intro / 1.6 : moon.ping / 0.5;
+      if (ring > 0) {
+        const k = 1 - (ring % 0.5) / 0.5;   // repeating pulses while it arrives
+        ctx.save();
+        ctx.globalAlpha = (1 - k) * 0.9;
+        ctx.strokeStyle = '#E8EBFF'; ctx.lineWidth = 1.6 * u;
+        ctx.beginPath(); ctx.arc(moon.x, moon.y, (6 + k * 14) * u, 0, 6.2832); ctx.stroke();
+        ctx.restore();
       }
     }
 
@@ -2798,7 +2858,7 @@
       ctx.shadowBlur = 0;
       ctx.fillStyle = '#C9D4E8';
       ctx.font = '400 ' + descSz + 'px "IBM Plex Mono", monospace';
-      ctx.fillText(reward.desc, cx, bottom + nameSz + descSz + 12);
+      ctx.fillText(reward.desc, cx, bottom + nameSz + descSz + 12, W - 24 * u);
       ctx.restore();
     }
 
@@ -3142,13 +3202,16 @@
         takeHit = function (x, y) {
           if (graceT > 0) return 'grace';
           if (shields > 0) { stats.absorbed++; shieldAbsorb(x, y); return 'absorbed'; }
-          if (has('last') && !lastStandUsed) { lastStandUsed = true; graceT = 1.6; stats.lastStandSaves = (stats.lastStandSaves || 0) + 1; return 'absorbed'; }
+          if (has('last') && !lastStandUsed) { stats.lastStandSaves = (stats.lastStandSaves || 0) + 1; return h._take(x, y); }
           stats.deaths++; graceT = 0.3; return 'grace';
         };
         grantItem = function (it) { stats.rewards.push({ id: it.id, full: shields >= shieldMax() }); if (!blockRewards) realGrant(it); };
         return stats;
       },
       slowActive: () => slowT > 0,
+      echo: () => ({ count: echoCount, bank: echoBank }), moonCd: () => (moon ? moon.cd : null),
+      lastStandUsed: () => lastStandUsed, hitNow: () => takeHit(px(), py()), roll: () => { const it = rollItem(); return it ? it.id : null; },
+      nearMiss: () => echoNearMiss(),
       mortal() { const h = window.__orbit; if (h._grant) grantItem = h._grant; if (h._take) takeHit = h._take; },
       // audio
       menuStart, menuStop, musicStart, musicStop, musicSlow, mute: () => el.mute.click(),
