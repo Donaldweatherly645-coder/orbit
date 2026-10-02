@@ -74,7 +74,7 @@ Orbit works as a Home Screen app: it gets its own icon, opens full screen with n
 - **iPhone / iPad (Safari):** open the game, tap **Share**, then **Add to Home Screen**.
 - **Android (Chrome):** open the menu (⋮), then **Install app** or **Add to Home screen**.
 
-**No sound on iPhone?** Tap the screen once (browsers only allow sound after a tap). On iOS 17 and later, music plays even with the silent switch on; on older iOS, flip the side switch off silent.
+**No sound?** Browsers keep every page silent until you tap it once, so the title screen has a **TAP FOR SOUND** button (tapping anywhere else works too). It doesn't start the game, and it disappears once sound is on. On iPhone: On iOS 17 and later, music plays even with the silent switch on; on older iOS, flip the side switch off silent.
 
 ## Running it locally
 
