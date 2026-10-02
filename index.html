@@ -104,7 +104,22 @@
     position:relative; width:min(430px,100%); padding:38px 40px 34px;
     background:rgba(10,14,26,.82); backdrop-filter:blur(3px);
     text-align:center; pointer-events:auto;
+    /* each screen scrolls itself. The overlay around it ignores touches (so
+       taps reach the game), and iPhone won't scroll an area you can't
+       touch -- so the panel, which you can, is the scroll box */
+    max-height:calc(100vh - 40px); max-height:calc(100dvh - 40px);
+    overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;
+    touch-action:pan-y;
   }
+  /* close button: pinned to the top-right corner while the list scrolls */
+  .closeX{
+    position:sticky; top:-26px; z-index:2; display:block; margin:-26px -26px 0 auto;
+    width:44px; height:44px; padding:0; cursor:pointer;
+    font-family:var(--mono); font-size:18px; line-height:44px;
+    color:var(--ice); background:rgba(10,14,26,.92); border:1px solid var(--line);
+  }
+  .closeX:hover{border-color:var(--slate)}
+  .closeX:focus-visible{outline:2px solid var(--sodium); outline-offset:2px}
   /* technical bracket corners, not a card */
   .panel::before,.panel::after{
     content:""; position:absolute; width:26px; height:26px; pointer-events:none;
@@ -334,6 +349,7 @@
     </div>
 
     <div class="panel hidden" id="achPanel">
+      <button class="closeX" type="button" id="achClose" aria-label="Close achievements">&#10005;</button>
       <p class="eyebrow">ACHIEVEMENTS</p>
       <p class="bestLine">UNLOCKED <span data-ach-count>0/0</span></p>
       <div id="achList"></div>
@@ -1283,17 +1299,22 @@
   }
   // the list opens over whichever screen you were on, and BACK returns there
   let achFrom = null;
+  const achPanel = document.getElementById('achPanel');
+  const achOpen = () => !achPanel.classList.contains('hidden');
   document.querySelectorAll('[data-ach-open]').forEach((b) => b.addEventListener('click', () => {
     achFrom = el.over.classList.contains('hidden') ? el.title : el.over;
     achFrom.classList.add('hidden');
-    document.getElementById('achPanel').classList.remove('hidden');
-    el.overlay.scrollTop = 0;
+    achPanel.classList.remove('hidden');
+    achPanel.scrollTop = 0; el.overlay.scrollTop = 0;
   }));
-  document.getElementById('achBack').addEventListener('click', () => {
-    document.getElementById('achPanel').classList.add('hidden');
+  function closeAch() {
+    achPanel.classList.add('hidden');
     (achFrom || el.title).classList.remove('hidden');
     el.overlay.scrollTop = 0;
-  });
+  }
+  document.getElementById('achBack').addEventListener('click', closeAch);
+  document.getElementById('achClose').addEventListener('click', closeAch);
+  window.addEventListener('keydown', (e) => { if (e.code === 'Escape' && achOpen()) closeAch(); });
   renderAch();
 
   // the landing is done: same results panel as a crash, dressed in gold
@@ -1334,6 +1355,8 @@
 
   /* ---------- input ---------- */
   function press(e) {
+    // a list is open on top of the menu: no tap or key may launch from here
+    if (achOpen()) return;
     const t = e && e.target;
     if (t && t.closest) {
       const btn = t.closest('button');
