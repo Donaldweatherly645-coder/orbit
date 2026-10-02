@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orbit regression</title>
+<style>
+  body{margin:0; font:13px/1.45 ui-monospace,Menlo,monospace; background:#0b0f1c; color:#c9d4e8}
+  header{padding:14px 16px; border-bottom:1px solid #1e2942}
+  h1{font-size:15px; margin:0 0 6px; color:#ffe2b0}
+  p{margin:4px 0; color:#7c8dae}
+  button{font:inherit; padding:12px 18px; margin-top:8px; background:#16203a; color:#ffe2b0; border:1px solid #ffd24c; cursor:pointer}
+  main{display:flex; gap:16px; padding:16px; flex-wrap:wrap; align-items:flex-start}
+  iframe{width:390px; height:844px; max-width:100%; border:1px solid #1e2942; background:#000; flex:0 0 auto}
+  #out{flex:1 1 420px; min-width:0}
+  table{border-collapse:collapse; width:100%}
+  td{border-bottom:1px solid #1e2942; padding:5px 6px; vertical-align:top}
+  td.r{width:44px; font-weight:700}
+  .pass{color:#7cffc2} .fail{color:#ff4d5e} .skip{color:#ffd24c}
+  th{text-align:left; padding:12px 6px 4px; color:#ffd24c; font-weight:500}
+  #sum{font-size:14px; margin:0 0 10px}
+  .d{color:#7c8dae}
+</style>
+</head>
+<body>
+<header>
+  <h1>Orbit &mdash; regression checks</h1>
+  <p>Runs the high-risk player flows against the real game (in the phone-sized frame). Press Run: the tap is what lets the audio checks make sound.</p>
+  <button id="run" type="button">Run all checks</button>
+</header>
+<main>
+  <iframe id="game" title="Orbit under test"></iframe>
+  <div id="out"><p id="sum">Not run yet.</p><table id="t"></table></div>
+</main>
+<script>
+(() => {
+  const frame = document.getElementById('game');
+  frame.src = '../index.html?test';
+  const T = document.getElementById('t'), sum = document.getElementById('sum');
+  const DIFFS = ['easy', 'normal', 'hard', 'extreme'];
+  const CAP = { easy: 2, normal: 2, hard: 3, extreme: 4 };
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  let pass = 0, fail = 0, skip = 0;
+  const G = () => frame.contentWindow.__orbit;
+  const S = () => G().snap();
+
+  function section(name) { const r = T.insertRow(); const th = document.createElement('th'); th.colSpan = 2; th.textContent = name; r.appendChild(th); }
+  function report(name, ok, detail) {
+    const r = T.insertRow(), a = r.insertCell(), b = r.insertCell();
+    a.className = 'r ' + (ok === null ? 'skip' : ok ? 'pass' : 'fail');
+    a.textContent = ok === null ? 'SKIP' : ok ? 'PASS' : 'FAIL';
+    b.innerHTML = name + (detail ? ' <span class="d">&mdash; ' + detail + '</span>' : '');
+    if (ok === null) skip++; else if (ok) pass++; else fail++;
+  }
+  async function check(name, fn) {
+    try { const [ok, detail] = await fn(); report(name, ok, detail); }
+    catch (e) { report(name, false, 'threw: ' + e.message); }
+  }
+  // a fresh, normal (non-dev) run with nothing spawning
+  function fresh(d) {
+    G().dev({ on: false, god: false, lvl: false, level: 1 });
+    G().setDifficulty(d); G().start(); G().quiet();
+  }
+  // step until the run ends or n frames pass
+  const stepUntilOver = (n, dt) => { for (let i = 0; i < n && S().state === 'play'; i++) G().step(1, dt); return S().state; };
+  // end the run for certain: a run can have picked up shields or Last Stand
+  // from planet rewards, so keep sending rocks until it's over
+  const crash = () => { for (let k = 0; k < 8 && S().state === 'play'; k++) { G().quiet(); G().rock(0.5, 1); stepUntilOver(120); } return S().state; };
+
+  async function runAll() {
+    pass = fail = skip = 0; T.innerHTML = ''; sum.textContent = 'Running...';
+    // audio must be unlocked from this tap, before anything else awaits
+    G().unlockAudio();
+
+    section('1. Start and finish a run, every difficulty');
+    for (const d of DIFFS) await check(`${d}: start, play, crash to game over`, () => {
+      G().dev({ on: false, god: false, lvl: false, level: 1 });
+      G().setDifficulty(d); G().start();
+      const s0 = S();
+      let flips = 0, nf = 30;
+      for (let i = 0; i < 60 * 240 && S().state === 'play'; i++) {
+        if (--nf <= 0) { G().press(); flips++; nf = 18 + Math.floor(Math.random() * 50); }
+        G().step(1);
+      }
+      const s = S();
+      return [s0.state === 'play' && s.state === 'over' && s.overShown && s.score > 0,
+        `started in "${s0.state}", ended "${s.state}" after ${s.elapsed.toFixed(1)}s, score ${s.score}, results shown: ${s.overShown}`];
+    });
+    for (const d of DIFFS) await check(`${d}: mothership fight to victory`, () => {
+      fresh(d);
+      G().set({ shields: 0, elapsed: G().stageAt(19) + 0.5, bossDelay: 0.05 });
+      const keepClear = () => { G().quiet(); G().set({ graceT: 9 }); };
+      for (let i = 0; i < 600 && S().boss !== 'fight'; i++) { keepClear(); G().step(1); }
+      const reached = S().boss;
+      G().set({ bossTimer: 0.02 });
+      for (let i = 0; i < 60 * 30 && S().state !== 'over'; i++) { keepClear(); G().step(1); }
+      const s = S();
+      return [reached === 'fight' && s.state === 'over' && s.won && s.overShown,
+        `boss reached "${reached}", ended "${s.state}", won: ${s.won}`];
+    });
+
+    section('2. Collisions (no shields unless stated)');
+    for (const d of DIFFS) {
+      await check(`${d}: rock hits the ship`, () => { fresh(d); G().rock(0.6, 1); return [stepUntilOver(120) === 'over', 'normal speed, 60fps']; });
+      await check(`${d}: fast rock at 30fps still hits`, () => { fresh(d); G().rock(0.6, 2.5); return [stepUntilOver(60, 1 / 30) === 'over', '2.5x speed, 30fps steps']; });
+      await check(`${d}: flying into a UFO hits`, () => { fresh(d); G().ufo(0.5); return [stepUntilOver(120) === 'over', 'UFO parked on the orbit ahead']; });
+      await check(`${d}: UFO shot hits (normal and fast, 30fps)`, () => {
+        fresh(d); G().shot(140, 260); const a = stepUntilOver(120, 1 / 30);
+        fresh(d); G().shot(140, 520); const b = stepUntilOver(120, 1 / 30);
+        return [a === 'over' && b === 'over', `260/s: ${a}, 520/s: ${b}`];
+      });
+      await check(`${d}: each shield absorbs exactly one hit`, () => {
+        const cap = CAP[d];
+        fresh(d); G().set({ shields: cap }); for (let k = 0; k < cap; k++) G().rock(0.5 + k * 0.3, 1);
+        const a = stepUntilOver(60 * 3), left = S().shields;
+        fresh(d); G().set({ shields: cap }); for (let k = 0; k <= cap; k++) G().rock(0.5 + k * 0.3, 1);
+        const b = stepUntilOver(60 * 3);
+        return [a === 'play' && left === 0 && b === 'over', `${cap} shields vs ${cap} rocks: ${a} (${left} left); vs ${cap + 1}: ${b}`];
+      });
+      await check(`${d}: a shield breaks on a shot too, then the next hit kills`, () => {
+        fresh(d); G().set({ shields: 1 }); G().shot(120, 300); G().rock(1.4, 1);
+        const st = stepUntilOver(60 * 3);
+        return [st === 'over', `1 shield, shot then rock: ${st}`];
+      });
+    }
+
+    section('3. Shield caps (Easy 2, Normal 2, Hard 3, Extreme 4)');
+    for (const d of DIFFS) await check(`${d}: cap ${CAP[d]} via Hull Patch upgrades and shield pickups`, () => {
+      fresh(d); for (let k = 0; k < 8; k++) G().grant('patch'); const viaPatch = S().shields;
+      fresh(d); for (let k = 0; k < 8; k++) { G().shieldPickupOnShip(); G().step(2); } const viaPickup = S().shields;
+      return [viaPatch === CAP[d] && viaPickup === CAP[d] && S().shieldMax === CAP[d], `patches: ${viaPatch}, pickups: ${viaPickup}, cap reported: ${S().shieldMax}`];
+    });
+
+    section('4. Run state: planets, victory, game over, dev mode');
+    await check('planet transitions go up one at a time and keep the run sane', () => {
+      fresh('normal'); const seen = [];
+      for (let k = 1; k <= 6; k++) { G().set({ elapsed: G().stageAt(k) + 0.05 }); G().step(3); G().quiet(); seen.push(S().planetStage); }
+      const s = S();
+      return [seen.join() === '1,2,3,4,5,6' && s.state === 'play' && s.shields <= s.shieldMax, `stages: ${seen.join(' ')}, state ${s.state}`];
+    });
+    await check('a new run after victory starts clean', () => {
+      fresh('easy'); G().set({ elapsed: G().stageAt(19) + 0.5, bossDelay: 0.05 });
+      for (let i = 0; i < 600 && S().boss !== 'fight'; i++) { G().quiet(); G().set({ graceT: 9 }); G().step(1); }
+      G().set({ bossTimer: 0.02 });
+      for (let i = 0; i < 60 * 30 && S().state !== 'over'; i++) { G().quiet(); G().set({ graceT: 9 }); G().step(1); }
+      G().start(); const s = S();
+      const ok = s.state === 'play' && s.boss === null && !s.land && !s.won && s.shipRad === 0 && s.planetStage === 0 && s.timeScale === 1 && s.slowT === 0 && s.shields === 0;
+      return [ok, `boss ${s.boss}, landing ${s.land}, won ${s.won}, planet ${s.planetStage}, timeScale ${s.timeScale}, shields ${s.shields}`];
+    });
+    await check('crashing in slow motion leaves the next run at normal speed', () => {
+      fresh('normal'); G().slowPickupOnShip(); G().step(40); const slowed = S().timeScale;
+      G().rock(0.5, 1); stepUntilOver(120); G().start(); const s = S();
+      return [slowed < 0.9 && s.timeScale === 1 && s.slowT === 0 && !s.musicSlow, `time scale during slow-mo ${slowed.toFixed(2)}, next run ${s.timeScale}, music slowed: ${s.musicSlow}`];
+    });
+    await check('a normal run saves a new best score, and earns achievements', () => {
+      fresh('easy'); G().set({ best: 0, clearAch: true });
+      G().step(60 * 31); const end = crash(); const s = S();
+      return [end === 'over' && s.score > 0 && s.best === s.score && s.ach >= 1, `ended "${end}", best 0 -> ${s.best}, run score ${s.score}, achievements 0 -> ${s.ach}`];
+    });
+    await check('a dev run (level select) never records best, achievements or all-time buffs', () => {
+      G().set({ best: 0, clearAch: true }); const b = S();
+      G().dev({ on: true, god: false, lvl: true, level: 12 }); G().setDifficulty('normal'); G().start(); G().quiet();
+      const isDev = S().devRun;
+      G().step(60 * 4); G().set({ elapsed: 400 }); G().step(5); const end = crash();
+      const a = S(); G().dev({ on: false, god: false, lvl: false, level: 1 });
+      return [isDev && end === 'over' && a.best === b.best && a.ach === b.ach && a.buffsAllTime === b.buffsAllTime,
+        `devRun ${isDev}, ended "${end}" with score ${a.score}; best ${b.best}->${a.best}, achievements ${b.ach}->${a.ach}, all-time buffs ${b.buffsAllTime}->${a.buffsAllTime}`];
+    });
+    await check('god mode makes the ship survive, and is off again when dev mode is off', () => {
+      G().dev({ on: true, god: true, lvl: false, level: 1 }); G().setDifficulty('normal'); G().start(); G().quiet(); G().rock(0.5, 1);
+      const godState = stepUntilOver(120);
+      G().dev({ on: false, god: true, lvl: false, level: 1 }); G().start(); G().quiet(); G().rock(0.5, 1);
+      const offState = stepUntilOver(120); G().dev({ on: false, god: false });
+      return [godState === 'play' && offState === 'over', `god on: ${godState}; dev off (god toggle left on): ${offState}`];
+    });
+
+    section('5. Audio');
+    if (S().audio !== 'running') {
+      report('audio checks', null, `audio context is "${S().audio}" -- the browser didn't allow sound from this tap. Tap Run again.`);
+    } else {
+      G().dev({ on: false, god: false }); G().musicStop(true); G().menuStart();
+      await sleep(2200);
+      await check('menu song plays', () => [S().menuPlaying, `menu song playing: ${S().menuPlaying}`]);
+      G().setDifficulty('hard'); G().start(); G().quiet();
+      await sleep(1800);
+      await check('launch hands off menu -> game song with no overlap', () => {
+        const s = S(); return [!s.menuOn && s.musicPlaying && s.musicStartAt >= s.menuSilentAt,
+          `menu silent at ${s.menuSilentAt.toFixed(3)}s, game song starts ${s.musicStartAt.toFixed(3)}s`]; });
+      G().mute(); await sleep(400); const mutedVol = S().musicVol;
+      G().mute(); await sleep(400); const backVol = S().musicVol;
+      await check('mute silences and restores the music', () => [mutedVol < 0.01 && backVol > 0.3, `muted ${mutedVol.toFixed(3)}, unmuted ${backVol.toFixed(3)}`]);
+      G().quiet(); G().slowPickupOnShip(); G().step(3); const slowOn = S().musicSlow;
+      G().step(60 * 6); G().quiet(); const slowOff = S().musicSlow;
+      await check('slow motion (real hourglass pickup) slows the song and releases it', () => [slowOn && !slowOff, `during slow-mo: ${slowOn}, after it ends: ${slowOff}`]);
+      G().hide(); await sleep(400); const hidden = S().audio;
+      G().show(); await sleep(600); const back = S().audio;
+      await check('tab/app interruption: suspends, then recovers', () => [hidden === 'suspended' && back === 'running', `hidden: ${hidden}, back: ${back}`]);
+      G().quiet(); G().rock(0.5, 1); stepUntilOver(120);
+      await sleep(2600);
+      await check('after a crash the menu song returns only once the game song is silent', () => {
+        const s = S(); return [s.menuOn && s.menuStartedAt >= s.musicSilentAt,
+          `game song silent at ${s.musicSilentAt.toFixed(3)}s, menu starts ${s.menuStartedAt.toFixed(3)}s`]; });
+    }
+
+    section('6. Install and offline (this page\'s server)');
+    const fw = frame.contentWindow;
+    await check('manifest and icons load from relative paths', async () => {
+      const m = await (await fetch('../manifest.webmanifest')).json();
+      const codes = await Promise.all(m.icons.map((i) => fetch('../' + i.src).then((r) => r.status)));
+      const start = new URL(m.start_url, new URL('../manifest.webmanifest', location.href)).href;
+      const scope = new URL(m.scope, new URL('../manifest.webmanifest', location.href)).href;
+      return [codes.every((c) => c === 200) && start.startsWith(scope), `icons ${codes.join(',')}, start ${start}`];
+    });
+    if (!('serviceWorker' in navigator) || !(location.protocol === 'https:' || location.hostname === 'localhost')) {
+      report('service worker / offline cache', null, 'needs https or localhost');
+    } else {
+      let refused = null;
+      let reg = await fw.navigator.serviceWorker.getRegistration();
+      for (let i = 0; i < 40 && !(reg && reg.active); i++) { await sleep(100); reg = await fw.navigator.serviceWorker.getRegistration(); }
+      if (!reg) { try { reg = await fw.navigator.serviceWorker.register('sw.js'); } catch (e) { refused = e.message; } }
+      if (refused) report('service worker / offline cache', null, 'this browser refused to run a service worker (' + refused + '). sw.js itself is checked by tests/check.py.');
+      else await check('service worker controls the game and has the offline copy cached', async () => {
+        for (let i = 0; i < 40 && !(reg && reg.active); i++) await sleep(100);
+        const keys = [];
+        for (const n of await fw.caches.keys()) for (const r of await (await fw.caches.open(n)).keys()) keys.push(new URL(r.url).pathname);
+        const base = new URL('../', location.href).pathname;
+        const need = ['', 'index.html', 'manifest.webmanifest', 'icons/icon-192.png'].map((p) => base + p);
+        const missing = need.filter((p) => !keys.includes(p));
+        return [!!(reg && reg.active) && !missing.length, `active: ${!!(reg && reg.active)}, scope ${reg && reg.scope}, missing: ${missing.join(' ') || 'none'}`];
+      });
+    }
+
+    sum.innerHTML = `<span class="pass">${pass} passed</span> &middot; <span class="${fail ? 'fail' : 'd'}">${fail} failed</span>` + (skip ? ` &middot; <span class="skip">${skip} skipped</span>` : '');
+    window.__results = { pass, fail, skip };
+  }
+
+  document.getElementById('run').addEventListener('click', () => { runAll(); });
+})();
+</script>
+</body>
+</html>
