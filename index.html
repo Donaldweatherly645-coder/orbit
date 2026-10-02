@@ -289,15 +289,42 @@
   .lvlRead .swatch{width:14px; height:14px; border-radius:50%; flex:none}
   #devTag .v{color:#7CFFC2; font-size:13px; letter-spacing:.1em}
   .hidden{display:none}
-  #title{align-self:end; margin-bottom:6vh}
+  /* the run's next action comes first; everything else sits below it */
+  .blurb b{color:var(--flare); font-weight:500}
+  .playBtn{border:1px solid rgba(255,154,60,.55); margin-top:16px; padding:12px 22px}
+  .more{margin-top:18px; padding-top:4px; border-top:1px solid var(--line)}
+  .more .stats{margin-top:16px}
+  .overSum{font-family:var(--mono); font-size:11px; letter-spacing:.18em; color:var(--slate-lit); margin:10px 0 0}
+  .final + .winLine{margin-top:8px}
+  #title{align-self:end; margin-bottom:4vh}
   #title h1{animation:rise .7s cubic-bezier(.2,.7,.3,1) both}
   #title .eyebrow{animation:rise .7s .06s cubic-bezier(.2,.7,.3,1) both}
-  #title .blurb,#title .bestLine,#title .diffLabel,#title .diffs,#title .keys,#title #devBox{animation:rise .7s .12s cubic-bezier(.2,.7,.3,1) both}
+  #title .blurb,#title .diffLabel,#title .diffs,#title .more{animation:rise .7s .12s cubic-bezier(.2,.7,.3,1) both}
   @keyframes rise{from{opacity:0; transform:translateY(10px)} to{opacity:1; transform:none}}
   .blink{animation:blink 1.5s steps(2,end) infinite}
   @keyframes blink{50%{opacity:.25}}
   @media (prefers-reduced-motion:reduce){
     *{animation:none !important}
+  }
+  /* short screens (small phones, landscape): tighten spacing, never shrink
+     the buttons */
+  @media (max-height:700px){
+    .panel{padding-top:24px; padding-bottom:20px}
+    .eyebrow{margin-bottom:10px}
+    h1{font-size:44px}
+    .rule{margin:12px 0}
+    .blurb{font-size:13px; line-height:1.5}
+    .diffLabel{margin:12px 0 6px}
+    .diffs{gap:8px}
+    .final{font-size:46px}
+    #title{margin-bottom:0; align-self:center}
+  }
+  @media (max-height:460px){
+    #title .eyebrow,#title .rule{display:none}
+    h1{font-size:34px}
+    .blurb{max-width:48ch}
+    .panel{width:min(560px,100%)}
+    .playBtn{margin-top:10px}
   }
   @media (max-width:520px){
     h1{font-size:50px} .panel{padding:30px 26px} .final{font-size:52px}
@@ -332,10 +359,7 @@
       <p class="eyebrow">SINGLE-BUTTON ARCADE</p>
       <h1>ORBIT</h1>
       <div class="rule"></div>
-      <p class="blurb">Debris is falling toward the planet. You can only do one thing about it: reverse your orbit. Grab sparks to chain a multiplier and shields to absorb hits (up to 2 on Easy and Normal, 3 on Hard, 4 on Extreme), and catch an hourglass to slow time -- alien saucers will be shooting at you too.</p>
-      <button class="soundBtn" type="button" id="soundBtn"><span class="note">&#9834;</span>TAP FOR SOUND</button>
-      <p class="bestLine">BEST <span id="titleBest">0</span></p>
-      <button class="achBtn" type="button" data-ach-open>ACHIEVEMENTS <span data-ach-count>0/0</span></button>
+      <p class="blurb">Tap to <b>flip your orbit</b> and dodge falling debris and UFO fire. Grab sparks to chain a multiplier and shields to absorb hits.</p>
       <p class="diffLabel">DIFFICULTY</p>
       <div class="diffs" role="group" aria-label="Difficulty" data-diffs>
         <button class="diff" type="button" data-diff="easy">EASY</button>
@@ -343,28 +367,33 @@
         <button class="diff" type="button" data-diff="hard">HARD</button>
         <button class="diff" type="button" data-diff="extreme">EXTREME</button>
       </div>
-      <div id="devBox">
-        <button class="devToggle" type="button" id="devToggle" aria-pressed="false">DEV MODE: OFF</button>
-        <div id="devTools" class="hidden">
-          <div class="devRow">
-            <button class="devOpt" type="button" id="devGod" aria-pressed="false">GOD MODE: OFF</button>
-            <button class="devOpt" type="button" id="devLvl" aria-pressed="false">LEVEL SELECT: OFF</button>
-          </div>
-          <div class="lvlPick off" id="lvlPick">
-            <button class="devOpt" type="button" id="lvlDown" aria-label="Previous planet">&#9664;</button>
-            <div class="lvlRead">
-              <span class="k">START PLANET <span id="lvlNum">1</span>/20</span>
-              <span class="v"><i class="swatch" id="lvlSwatch"></i><span id="lvlName">DORMANT</span></span>
+      <button class="prompt blink playBtn" type="button">PRESS TO LAUNCH</button>
+      <div class="more">
+        <button class="soundBtn" type="button" id="soundBtn"><span class="note">&#9834;</span>TAP FOR SOUND</button>
+        <p class="bestLine">BEST <span id="titleBest">0</span></p>
+        <button class="achBtn" type="button" data-ach-open>ACHIEVEMENTS <span data-ach-count>0/0</span></button>
+        <button class="installBtn hidden" type="button" id="installBtn">&#8681; PLAY OFFLINE</button>
+        <div class="keys">
+          <span class="key">CLICK</span><span class="key">SPACE</span><span class="key">TAP</span>
+        </div>
+        <div id="devBox">
+          <button class="devToggle" type="button" id="devToggle" aria-pressed="false">DEV MODE: OFF</button>
+          <div id="devTools" class="hidden">
+            <div class="devRow">
+              <button class="devOpt" type="button" id="devGod" aria-pressed="false">GOD MODE: OFF</button>
+              <button class="devOpt" type="button" id="devLvl" aria-pressed="false">LEVEL SELECT: OFF</button>
             </div>
-            <button class="devOpt" type="button" id="lvlUp" aria-label="Next planet">&#9654;</button>
+            <div class="lvlPick off" id="lvlPick">
+              <button class="devOpt" type="button" id="lvlDown" aria-label="Previous planet">&#9664;</button>
+              <div class="lvlRead">
+                <span class="k">START PLANET <span id="lvlNum">1</span>/20</span>
+                <span class="v"><i class="swatch" id="lvlSwatch"></i><span id="lvlName">DORMANT</span></span>
+              </div>
+              <button class="devOpt" type="button" id="lvlUp" aria-label="Next planet">&#9654;</button>
+            </div>
           </div>
         </div>
       </div>
-      <div class="keys">
-        <span class="key">CLICK</span><span class="key">SPACE</span><span class="key">TAP</span>
-      </div>
-      <button class="installBtn hidden" type="button" id="installBtn">&#8681; PLAY OFFLINE</button>
-      <button class="prompt blink playBtn" type="button">PRESS TO LAUNCH</button>
     </div>
 
     <div class="panel hidden popup" id="achPanel">
@@ -395,21 +424,7 @@
       <p class="eyebrow" id="overEyebrow">ORBIT LOST</p>
       <p class="final" id="finalScore">0</p>
       <p class="winLine hidden" id="winLine">MOTHERSHIP DESTROYED &middot; SHIP LANDED</p>
-      <div class="stats">
-        <div class="stat"><span class="k">TIME ALOFT</span><span class="v" id="stTime">0.0s</span></div>
-        <div class="stat"><span class="k">SPARKS</span><span class="v" id="stSparks">0</span></div>
-        <div class="stat"><span class="k">NEAR MISSES</span><span class="v" id="stNear">0</span></div>
-        <div class="stat best"><span class="k">BEST</span><span class="v" id="stBest">0</span></div>
-        <div class="stat"><span class="k">MODE</span><span class="v" id="stMode">NORMAL</span></div>
-        <div class="stat"><span class="k">PLANET</span><span class="v" id="stPlanet">DORMANT</span></div>
-        <div class="stat"><span class="k">BUFFS</span><span class="v" id="stBuffs">0</span></div>
-        <div class="stat"><span class="k">ALL-TIME BUFFS</span><span class="v" id="stBuffsAll">0</span></div>
-      </div>
-      <button class="achBtn" type="button" data-ach-open>ACHIEVEMENTS <span data-ach-count>0/0</span></button>
-      <div id="overBuffs" class="hidden">
-        <p class="diffLabel">BUFFS COLLECTED</p>
-        <div class="list" id="overBuffsList"></div>
-      </div>
+      <p class="overSum" id="overSum"></p>
       <p class="diffLabel">DIFFICULTY</p>
       <div class="diffs" role="group" aria-label="Difficulty" data-diffs>
         <button class="diff" type="button" data-diff="easy">EASY</button>
@@ -418,6 +433,23 @@
         <button class="diff" type="button" data-diff="extreme">EXTREME</button>
       </div>
       <button class="prompt blink playBtn" type="button" id="againPrompt">PRESS TO RELAUNCH</button>
+      <div class="more" id="overMore">
+        <div class="stats">
+          <div class="stat"><span class="k">TIME ALOFT</span><span class="v" id="stTime">0.0s</span></div>
+          <div class="stat"><span class="k">SPARKS</span><span class="v" id="stSparks">0</span></div>
+          <div class="stat"><span class="k">NEAR MISSES</span><span class="v" id="stNear">0</span></div>
+          <div class="stat best"><span class="k">BEST</span><span class="v" id="stBest">0</span></div>
+          <div class="stat"><span class="k">MODE</span><span class="v" id="stMode">NORMAL</span></div>
+          <div class="stat"><span class="k">PLANET</span><span class="v" id="stPlanet">DORMANT</span></div>
+          <div class="stat"><span class="k">BUFFS</span><span class="v" id="stBuffs">0</span></div>
+          <div class="stat"><span class="k">ALL-TIME BUFFS</span><span class="v" id="stBuffsAll">0</span></div>
+        </div>
+        <button class="achBtn" type="button" data-ach-open>ACHIEVEMENTS <span data-ach-count>0/0</span></button>
+        <div id="overBuffs" class="hidden">
+          <p class="diffLabel">BUFFS COLLECTED</p>
+          <div class="list" id="overBuffsList"></div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -1322,13 +1354,18 @@
     try { localStorage.setItem('orbit.ach', JSON.stringify(achGot)); } catch (e) {}
     const a = ACHIEVEMENTS.find((x) => x.id === id);
     achToastQ.push(a.icon + '  ' + a.name);
-    nextAchToast();
+    // wait a tick so achievements earned by the same event share one banner
+    setTimeout(nextAchToast, 0);
     renderAch();
   }
   function nextAchToast() {
     if (achToastBusy || !achToastQ.length) return;
     achToastBusy = true;
-    document.getElementById('achToastName').textContent = achToastQ.shift();
+    const names = achToastQ.splice(0);
+    document.querySelector('#achToast .k').textContent =
+      names.length > 1 ? names.length + ' ACHIEVEMENTS UNLOCKED' : 'ACHIEVEMENT UNLOCKED';
+    document.getElementById('achToastName').innerHTML = names.map((n) =>
+      n.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))).join('<br>');
     const t = document.getElementById('achToast');
     t.classList.add('show');
     chime([659, 831, 988, 1319], 0.08, 0, 'triangle', 0.06);
@@ -1402,10 +1439,12 @@
     el.stPlanet.textContent = PLANET_STAGES[planetStage].label;
     el.stBuffs.textContent = buffCount;
     el.stBuffsAll.textContent = buffsAllTime.toLocaleString();
+    document.getElementById('overSum').textContent =
+      DIFF[difficulty].label + ' \u00b7 ' + PLANET_STAGES[planetStage].label + ' \u00b7 ' + elapsed.toFixed(1) + 's';
     el.over.classList.toggle('win', won);
     el.overEyebrow.textContent = (won ? 'MISSION COMPLETE' : 'ORBIT LOST') + (devRun ? ' \u00b7 DEV RUN' : '');
     // the dev controls follow you to the game-over screen
-    el.over.insertBefore(devEl.devBox, document.getElementById('againPrompt'));
+    document.getElementById('overMore').appendChild(devEl.devBox);
     el.winLine.classList.toggle('hidden', !won);
     renderOverBuffs();
     el.titleBest.textContent = best.toLocaleString();

@@ -48,7 +48,7 @@ Pick a difficulty from the title screen before launching. Every tier has its own
 
 Your best score is saved locally in your browser and shown on the title screen.
 
-**Achievements:** ten to earn, saved on your device. Tap **ACHIEVEMENTS** on the title or game-over screen to see them all -- the ones you haven't earned yet are greyed out with what it takes. A banner drops in the moment you earn one. Dev-mode runs don't count.
+**Achievements:** ten to earn, saved on your device. Tap **ACHIEVEMENTS** on the title or game-over screen to see them all -- the ones you haven't earned yet are greyed out with what it takes. A banner drops in the moment you earn one (several earned at once share one banner). Dev-mode runs don't count.
 
 | Achievement | How to earn it |
 |---|---|
