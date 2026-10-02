@@ -961,6 +961,7 @@
   // for SLOW_TIME seconds, then eases time back to full speed
   const SLOW_DIFF = { easy: 32, normal: 28, hard: 24, extreme: 20 };
   const SLOW_TIME = 3, SLOW_SCALE = 0.4;
+  const SLOW_AFTER_PLANET = 8;   // seconds: no hourglass spawns this soon after a new planet
 
   // The finale. A few seconds after the planet reaches its final form, the
   // UFOs' mothership arrives and parks above the orbit. You can't shoot it:
@@ -1999,6 +2000,9 @@
         novas.push({ r: R_PLANET, maxR: spawnR + 60, full: true, color: ps.core });
         hitStopT = 0.5;
         graceT = Math.max(graceT, 1.2);
+        // a new planet already gives a breather (screen cleared, time
+        // dipped), so no slow-mo hourglass for a while after it
+        nextSlow = Math.max(nextSlow, SLOW_AFTER_PLANET);
         const it = rollItem();
         grantItem(it);
         reward = { t: 0, ps, it };
