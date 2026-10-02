@@ -72,9 +72,6 @@
   #shieldBadge.on{display:flex}
   #shieldBadge .v{color:#6FE3FF; letter-spacing:.12em}
   #shieldBadge.hit .v{color:var(--danger)}
-  #buffs .v{color:#FFD24C}
-  #buffs.pop .v{animation:buffPop .6s cubic-bezier(.2,.7,.3,1)}
-  @keyframes buffPop{0%{transform:scale(1.8); color:#fff} 100%{transform:scale(1)}}
   /* buff tracker: every active power-up by name, with how long it has left */
   #items{
     position:absolute; left:0; right:0; bottom:0; z-index:2; pointer-events:none;
@@ -272,7 +269,6 @@
     <div class="read hidden" id="devTag"><span class="k">DEV</span><span class="v">GOD</span></div>
     <div class="read" id="best"><span class="k">BEST</span><span class="v">0</span></div>
     <div class="read" id="shieldBadge"><span class="k">SHIELD</span><span class="v">●</span></div>
-    <div class="read" id="buffs"><span class="k">BUFFS</span><span class="v">0</span></div>
     <div class="read" id="combo"><span class="k">CHAIN</span><span class="v">x1</span></div>
     <button id="mute" type="button" aria-pressed="false">SOUND ON</button>
   </div>
@@ -373,8 +369,6 @@
     stPlanet: document.getElementById('stPlanet'),
     stBuffs: document.getElementById('stBuffs'),
     stBuffsAll: document.getElementById('stBuffsAll'),
-    buffs: document.getElementById('buffs'),
-    buffsV: document.querySelector('#buffs .v'),
     titleBest: document.getElementById('titleBest'),
     overlay: document.getElementById('overlay'),
     shieldBadge: document.getElementById('shieldBadge'),
@@ -926,6 +920,12 @@
   ];
   const NOVA_EVERY = 30, MOON_COOLDOWN = 5;
   let owned = {}, novas = [], reward = null, hitStopT = 0;
+  // pickup callout: the name, big, below the orbit, plus a few words on
+  // what it does -- so you learn what a pickup is without reading the
+  // tracker mid-fight
+  let callout = null;
+  const CALLOUT_TIME = 1.7;
+  function announce(name, desc, color) { callout = { t: 0, name, desc, color }; }
   let moon = null, echoCount = 0, novaT = 0, lastStandUsed = false;
   const has = (id) => !!owned[id];
   function rollItem() {
@@ -941,8 +941,6 @@
       buffsAllTime++;
       try { localStorage.setItem('orbit.buffs', String(buffsAllTime)); } catch (e) {}
     }
-    el.buffsV.textContent = buffCount;
-    el.buffs.classList.remove('pop'); void el.buffs.offsetWidth; el.buffs.classList.add('pop');
     if (it.id === 'patch') shields = Math.min(SHIELD_MAX, shields + 1);
     if (it.id === 'moon') moon = { a: 0, cd: 0, x: 0, y: 0 };
     if (it.id === 'nova') novaT = NOVA_EVERY;
@@ -1019,7 +1017,7 @@
     shieldsGot = 0; slowsGot = 0;
     owned = {}; novas = []; reward = null; hitStopT = 0;
     moon = null; echoCount = 0; novaT = 0; lastStandUsed = false;
-    buffCount = 0; el.buffsV.textContent = '0';
+    buffCount = 0; callout = null;
     renderItems();
     nextSlow = SLOW_DIFF[difficulty] * (0.6 + Math.random() * 0.4);
     planetStage = 0;
@@ -1231,7 +1229,7 @@
       graceT = 1.6;
       flash = 1;
       novas.push({ r: R_PLANET, maxR: spawnR + 60, full: true, color: '#FFD24C' });
-      float(px(), py() - 22 * u, 'LAST STAND', '#FFD24C');
+      announce('LAST STAND', 'FATAL HIT SURVIVED -- ONCE PER RUN', '#FFD24C');
       sfx.nova();
       if (slowT <= 0) { slowT = slowLen(); sfx.slowIn(); musicSlow(true); }
       return 'absorbed';
@@ -1625,7 +1623,8 @@
         if (Math.hypot(sx - ppx, sy - ppy) < pickR()) {
           // a Hull Patch or Echo Shield can top you up while this pickup is out
           shields = Math.min(SHIELD_MAX, shields + 1); shieldsGot++;
-          float(sx, sy - 20 * u, shields > 1 ? 'SHIELD x' + shields : 'SHIELD', '#6FE3FF');
+          announce(shields > 1 ? 'SHIELD x' + shields : 'SHIELD',
+            shields > 1 ? 'BLOCKS THE NEXT ' + shields + ' HITS' : 'BLOCKS THE NEXT HIT', '#6FE3FF');
           burst(sx, sy, 14, '#6FE3FF', 140 * u);
           sfx.shieldGet();
           shieldPickup = null;
@@ -1647,7 +1646,7 @@
         const sx = cx + Math.cos(slowPickup.a) * R_ORBIT, sy = cy + Math.sin(slowPickup.a) * R_ORBIT;
         if (Math.hypot(sx - ppx, sy - ppy) < pickR()) {
           slowT = slowLen(); slowsGot++;
-          float(sx, sy - 20 * u, 'SLOW-MO', '#B79CFF');
+          announce('SLOW-MO', 'EVERYTHING SLOWS FOR ' + slowLen() + 'S', '#B79CFF');
           burst(sx, sy, 16, '#B79CFF', 150 * u);
           sfx.slowIn();
           musicSlow(true);
@@ -1741,6 +1740,7 @@
       if (nv.r > nv.maxR) novas.splice(n, 1);
     }
     if (reward) { reward.t += rdt; if (reward.t > 3.6) reward = null; }
+    if (callout) { callout.t += rdt; if (callout.t > CALLOUT_TIME || reward) callout = null; }
 
     if (playing && has('nova')) {
       novaT -= dt;
@@ -2158,11 +2158,32 @@
         ctx.beginPath(); ctx.arc(0, 0, SHIP * (2.2 + (1 - f) * 2.5), 0, 6.2832); ctx.stroke();
         ctx.setLineDash([]);
       }
+      // live buffs, drawn on the ship itself so you never look away:
+      // slow-mo is a violet ring that drains as it runs out
+      if (slowT > 0) {
+        const f = Math.max(0, Math.min(1, slowT / slowLen()));
+        ctx.strokeStyle = '#B79CFF'; ctx.lineWidth = 2.4 * u; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.arc(0, 0, SHIP * 1.85, -Math.PI / 2, -Math.PI / 2 + f * 6.2832); ctx.stroke();
+        ctx.lineCap = 'butt';
+      }
+      // echo shield: 10 dots around the ship, one lit per near miss
+      if (has('echo') && state === 'play') {
+        for (let k = 0; k < 10; k++) {
+          const a = -Math.PI / 2 + (k / 10) * 6.2832;
+          ctx.globalAlpha = k < echoCount ? 0.95 : 0.18;
+          ctx.fillStyle = '#6FE3FF';
+          ctx.beginPath(); ctx.arc(Math.cos(a) * SHIP * 5.2, Math.sin(a) * SHIP * 5.2, 1.4 * u, 0, 6.2832); ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      }
+      // last stand, while it's still in hand, turns the ship's glow gold
+      const lastReady = has('last') && !lastStandUsed && state === 'play';
       let rot = player.a + player.dir * Math.PI / 2;
       // touching down: the nose swings round from flying to pointing up
       if (land) rot += angDiff(rot, player.a) * Math.max(0, Math.min(1, (land.t / LAND_TIME - 0.6) / 0.4));
       ctx.rotate(rot);
-      ctx.shadowColor = '#FF9A3C'; ctx.shadowBlur = 16 * u;
+      ctx.shadowColor = lastReady ? '#FFD24C' : '#FF9A3C';
+      ctx.shadowBlur = (lastReady ? 22 + 8 * Math.sin(t * 4) : 16) * u;
       ctx.fillStyle = '#FF9A3C';
       ctx.beginPath();
       ctx.moveTo(SHIP * 1.5, 0);
@@ -2171,7 +2192,7 @@
       ctx.lineTo(-SHIP * 0.9, -SHIP * 0.78);
       ctx.closePath(); ctx.fill();
       ctx.shadowBlur = 0;
-      ctx.fillStyle = '#FFE2B0';
+      ctx.fillStyle = lastReady ? '#FFD24C' : '#FFE2B0';
       ctx.beginPath(); ctx.arc(SHIP * 0.35, 0, SHIP * 0.26, 0, 6.2832); ctx.fill();
       ctx.restore();
     }
@@ -2201,6 +2222,25 @@
       ctx.shadowColor = '#E8EBFF'; ctx.shadowBlur = moon.cd > 0 ? 0 : 10 * u;
       ctx.fillStyle = '#E8EBFF';
       ctx.beginPath(); ctx.arc(moon.x, moon.y, 4 * u, 0, 6.2832); ctx.fill();
+      ctx.restore();
+      // recharging: a small ring fills back up around it
+      if (moon.cd > 0) {
+        ctx.strokeStyle = 'rgba(232,235,255,.8)'; ctx.lineWidth = 1.4 * u;
+        ctx.beginPath();
+        ctx.arc(moon.x, moon.y, 7.5 * u, -Math.PI / 2, -Math.PI / 2 + (1 - moon.cd / MOON_COOLDOWN) * 6.2832);
+        ctx.stroke();
+      }
+    }
+
+    // nova pulse: a gold ring around the planet fills up toward the next
+    // shockwave, and blinks for the last few seconds as a heads-up
+    if (has('nova') && state === 'play') {
+      const f = 1 - Math.max(0, Math.min(1, novaT / NOVA_EVERY));
+      const soon = novaT < 3;
+      ctx.save();
+      ctx.globalAlpha = soon ? (Math.floor(t * 6) % 2 ? 1 : 0.35) : 0.75;
+      ctx.strokeStyle = '#FFD24C'; ctx.lineWidth = (soon ? 3 : 2) * u; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.arc(cx, cy, R_PLANET + 9 * u, -Math.PI / 2, -Math.PI / 2 + f * 6.2832); ctx.stroke();
       ctx.restore();
     }
 
@@ -2247,6 +2287,29 @@
       ctx.fillStyle = '#A8CBE6';
       ctx.font = '400 ' + Math.max(9, Math.round(11 * u)) + 'px "IBM Plex Mono", monospace';
       ctx.fillText(reward.it.desc, cx, bottom + 46 * u);
+      ctx.restore();
+    }
+
+    // pickup callout, above the orbit -- the bottom of the screen is taken
+    // by the buff tracker, and above is where the new-planet name lands too
+    if (callout && !reward) {
+      const ct = callout.t;
+      const alpha = Math.min(1, ct / 0.12) * Math.min(1, (CALLOUT_TIME - ct) / 0.4);
+      const pop = 1 + 0.2 * Math.max(0, 1 - ct / 0.2);
+      const y = cy - R_ORBIT - 46 * u;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, alpha);
+      ctx.textAlign = 'center';
+      ctx.save();
+      ctx.translate(cx, y); ctx.scale(pop, pop);
+      ctx.shadowColor = callout.color; ctx.shadowBlur = 12 * u;
+      ctx.fillStyle = callout.color;
+      ctx.font = '700 ' + Math.max(18, Math.round(26 * u)) + 'px Oxanium, "Trebuchet MS", sans-serif';
+      ctx.fillText(callout.name, 0, 0);
+      ctx.restore();
+      ctx.fillStyle = '#A8CBE6';
+      ctx.font = '400 ' + Math.max(10, Math.round(12 * u)) + 'px "IBM Plex Mono", monospace';
+      ctx.fillText(callout.desc, cx, y + 22 * u);
       ctx.restore();
     }
 
