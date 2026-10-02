@@ -20,11 +20,7 @@ Your ship is locked in a fixed orbit around the planet. Press the one button to 
   | Upgrade | Rarity | Effect |
   |---|---|---|
   | Hull Patch | Common (can repeat) | +1 shield layer |
-  | Spark Magnet | Common | Grab pickups from further away |
-  | Steady Nerves | Common | Longer escape window after a hit |
-  | Dampener Field | Uncommon | New debris and UFO shots move 12% slower |
   | Chrono Core | Uncommon | Slow motion lasts 5s and shows up more often |
-  | Signal Jammer | Uncommon | UFOs take longer to aim and fire less often |
   | Echo Shield | Uncommon | Every 10 near misses restores a shield layer |
   | Guardian Moon | Rare | A moon circles your ship and smashes debris (5s recharge) |
   | Nova Pulse | Rare | Every 30s a shockwave clears the space around the planet |
@@ -51,6 +47,18 @@ Pick a difficulty from the title screen before launching. Every tier has its own
 - **EXTREME** — the fastest, densest tier, paired with the most vivid, fastest-shifting version of that same backdrop -- full psychedelic. Up to three UFOs can be hovering at once, firing fast. A dark vignette keeps the ship and orbit legible at every tier, even as the edges of the screen go wild here.
 
 Your best score is saved locally in your browser and shown on the title screen.
+
+**Achievements:** ten to earn, saved on your device. Tap **ACHIEVEMENTS** on the title or game-over screen to see them all -- the ones you haven't earned yet are greyed out with what it takes. A banner drops in the moment you earn one. Dev-mode runs don't count.
+
+| Achievement | How to earn it |
+|---|---|
+| First Orbit | Survive 30 seconds |
+| Iron Nerves | Survive 3 minutes in one run |
+| Cadet / Pilot / Ace / Legend | Reach planet 5 on EASY / NORMAL / HARD / EXTREME |
+| Halfway There | Reach planet 10 |
+| Ascendant | Reach planet 20 |
+| Mission Complete | Beat the Mothership |
+| Extreme Victor | Beat the Mothership on EXTREME |
 
 **Dev mode (for testing):** tap **DEV MODE** under the difficulty buttons, on the title or game-over screen. Two more toggles appear:
 
