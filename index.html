@@ -476,8 +476,8 @@
     ufoFire:     () => tone(520, 170, 0.16, 'sawtooth', 0.07),
     shieldGet:   () => { tone(500, 900, 0.16, 'triangle', 0.08); musicBuff(); },
     shieldBreak: () => { tone(700, 200, 0.18, 'square', 0.09); hiss(0.15, 0.06); },
-    slowIn:      () => { tone(520, 90, 0.5, 'sine', 0.09); hiss(0.35, 0.05); },
-    slowOut:     () => tone(140, 700, 0.9, 'triangle', 0.05),
+    slowIn:      () => { tone(520, 90, 1.1, 'sine', 0.09); hiss(0.35, 0.05); },
+    slowOut:     () => tone(140, 700, 0.4, 'triangle', 0.05),
     // a rising major arpeggio; rarer upgrades keep climbing and sparkle
     reward: (rarity) => {
       chime([523, 659, 784, 1047], 0.075, 0, 'triangle', 0.08);
@@ -618,13 +618,14 @@
   }
 
   const music = { gain: null, bus: null, src: null, timer: 0, stage: 0, slow: false, run: 0 };
-  // Slow motion, musically: the song brakes to SLOW_RATE speed, its pitch
-  // dropping with it like a slowing tape, and the mix goes dark and roomy.
-  // When it ends, speed, pitch and brightness all glide back up over a
-  // couple of seconds, and a crash marks the song landing back on its feet.
+  // Slow motion, musically: the song winds down to SLOW_RATE speed like a
+  // tape slowing to a stop -- gently at first, then sinking -- its pitch
+  // dropping with it while the mix goes dark and roomy. When it ends it
+  // snaps back up quickly so the pace never drags, and a crash marks the
+  // song landing back on its feet.
   const SLOW_RATE = 0.6;
   const SLOW_BEND = 1200 * Math.log2(SLOW_RATE);   // the same drop, in cents
-  const SLOW_IN = 0.45, SLOW_OUT = 1.9;            // seconds
+  const SLOW_IN = 1.2, SLOW_OUT = 0.4;             // seconds
   function musicSlow(on) {
     const a = actx;
     if (!a || !music.timer) return;
@@ -632,8 +633,17 @@
     const dur = on ? SLOW_IN : SLOW_OUT;
     music.slow = on;
     const glide = (param, to, exp) => {
+      const from = param.value;
       param.cancelScheduledValues(t);
-      param.setValueAtTime(param.value, t);
+      if (on && !exp) {
+        // the tape-stop curve: an ease-in, so the drop starts gently and
+        // deepens -- you hear it begin to sink, then settle low
+        const N = 32, curve = new Float32Array(N);
+        for (let i = 0; i < N; i++) curve[i] = from + (to - from) * Math.pow(i / (N - 1), 1.7);
+        try { param.setValueCurveAtTime(curve, t, dur); return; }
+        catch (e) { param.cancelScheduledValues(t); }   // overlapped another curve: fall back to a plain glide
+      }
+      param.setValueAtTime(from, t);
       exp ? param.exponentialRampToValueAtTime(to, t + dur) : param.linearRampToValueAtTime(to, t + dur);
     };
     if (music.src) glide(music.src.playbackRate, on ? SLOW_RATE : 1, false);
@@ -1501,10 +1511,15 @@
     hitStopT = Math.max(0, hitStopT - rdt);
     // a new planet freezes the action for a beat (a "hit stop"), on top of slow-mo
     const targetScale = Math.min(slowT > 0 ? SLOW_SCALE : 1, hitStopT > 0 ? 0.2 : 1);
-    // snap into slow motion, ease back out of it over about a second
-    timeScale += (targetScale - timeScale) * Math.min(1, rdt * (targetScale < timeScale ? 9 : 2.5));
+    // slow-mo winds down gradually (in step with the song's tape stop, about
+    // a second) and snaps back up fast so the pace doesn't drag. A new
+    // planet's hit stop still snaps in, and eases out as before.
+    const goingDown = targetScale < timeScale;
+    const fromSlow = slowVis > 0.05;
+    const rate = goingDown ? (hitStopT > 0 ? 9 : 3) : (fromSlow ? 8 : 2.5);
+    timeScale += (targetScale - timeScale) * Math.min(1, rdt * rate);
     const dt = rdt * timeScale;
-    slowVis += ((slowT > 0 ? 1 : 0) - slowVis) * Math.min(1, rdt * (slowT > 0 ? 9 : 2.5));
+    slowVis += ((slowT > 0 ? 1 : 0) - slowVis) * Math.min(1, rdt * (slowT > 0 ? 3 : 8));
     graceT = Math.max(0, graceT - rdt);
     shieldHitT = Math.max(0, shieldHitT - rdt);
     if (playing) { elapsed += rdt; score += rdt * 8; }
