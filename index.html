@@ -588,9 +588,9 @@
   // after it). shift: semitones to move the stingers from C so they fit
   // the song's key.
   const SONGS = {
-    main:    { url: 'music/crossing-the-meteor-belt.mp3', loopEnd: 172.2, shift: 0 },
-    pursuit: { url: 'music/phase-eight-pursuit.mp3',      loopEnd: 168.4, shift: -2, major: true },
-    extreme: { url: 'music/last-save-point.mp3',          loopEnd: 171.6, shift: 3 },
+    main:    { url: 'music/crossing-the-meteor-belt.mp3?v=7d273dbe', loopEnd: 172.2, shift: 0 },
+    pursuit: { url: 'music/phase-eight-pursuit.mp3?v=ccd8d33d',      loopEnd: 168.4, shift: -2, major: true },
+    extreme: { url: 'music/last-save-point.mp3?v=d90a116a',          loopEnd: 171.6, shift: 3 },
   };
   // EASY: Crossing the Meteor Belt; NORMAL/HARD: Phase Eight Pursuit;
   // EXTREME: Last Save Point. (All four songs, menu included, measure
@@ -598,7 +598,7 @@
   const songFor = () => (difficulty === 'extreme' ? SONGS.extreme
     : difficulty === 'easy' ? SONGS.main : SONGS.pursuit);
   // the title / game-over screens get their own song, "Ready for Launch"
-  const MENU_SONG = { url: 'music/ready-for-launch.mp3', loopEnd: 164.5 };
+  const MENU_SONG = { url: 'music/ready-for-launch.mp3?v=b39854c2', loopEnd: 164.5 };
   const MENU_FADE_IN = 1.5, MENU_FADE_OUT = 0.8, HANDOFF_GAP = 0.05;   // seconds
   songFetch(MENU_SONG);   // the title screen is the first thing anyone sees
   const MUSIC_VOL = 0.6;
@@ -2958,6 +2958,63 @@
   el.best.textContent = best.toLocaleString();
   el.titleBest.textContent = best.toLocaleString();
   requestAnimationFrame(frame);
+
+  /* ---------- regression-test hook ---------- */
+  // Only when the page is opened with ?test (tests/regression.html does
+  // this). Gives the test page a window into the game's internals; normal
+  // players never get it.
+  if (/[?&]test\b/.test(location.search)) {
+    window.__orbit = {
+      snap: () => ({
+        state, difficulty, shields, shieldMax: shieldMax(), planetStage, elapsed, score: Math.floor(score), best,
+        devRun, boss: boss ? boss.phase : null, land: !!land, won, shipRad, timeScale, slowT, graceT, hitStopT,
+        debris: debris.length, ufos: ufos.length, shots: shots.length, ach: Object.keys(achGot).length,
+        buffsAllTime, overShown: !el.over.classList.contains('hidden'),
+        audio: actx ? actx.state : 'none', muted,
+        menuOn: menu.on, menuPlaying: !!menu.src, menuSilentAt: menu.silentAt, menuStartedAt: menu.startedAt,
+        musicOn: !!music.timer, musicPlaying: !!music.src, musicSilentAt: music.silentAt, musicStartAt: music.startAt || 0,
+        musicSlow: music.slow, now: actx ? actx.currentTime : 0,
+        musicVol: music.gain ? music.gain.gain.value : null, menuVol: menu.gain ? menu.gain.gain.value : null,
+      }),
+      step: (n, dt) => { for (let i = 0; i < n && (state === 'play' || state === 'finale'); i++) update(dt || 1 / 60); },
+      setDifficulty, start, press: () => press(null), unlockAudio,
+      quiet() {   // stop everything spawning, clear the field
+        debris.length = 0; ufos.length = 0; shots.length = 0; sparks.length = 0;
+        nextDebris = 1e9; nextUFO = 1e9; nextShield = 1e9; nextSlow = 1e9; snagT = 1e9; nextSpark = 1e9;
+        shieldPickup = null; slowPickup = null; graceT = 0;
+      },
+      set: (o) => { if ('shields' in o) shields = o.shields; if ('graceT' in o) graceT = o.graceT;
+        if ('elapsed' in o) elapsed = o.elapsed; if ('bossTimer' in o && boss) boss.timer = o.bossTimer;
+        if ('bossDelay' in o) bossDelay = o.bossDelay; if ('slowT' in o) slowT = o.slowT;
+        if ('best' in o) best = o.best; if (o.clearAch) { for (const k in achGot) delete achGot[k]; } },
+      grant: (id) => grantItem(ITEMS.find((x) => x.id === id)),
+      shieldPickupOnShip: () => { shieldPickup = { a: player.a, life: 8 }; },
+      slowPickupOnShip: () => { slowPickup = { a: player.a, life: 8 }; },
+      stageAt: (k) => STAGE_THRESH[difficulty][k],
+      dev: (o) => { Object.assign(dev, o); renderDev(); },
+      // hazards placed relative to the ship
+      rock(ahead, speedMul) {   // a rock falling onto the orbit, timed to arrive where the ship will be
+        const v = 300 * u * (speedMul || 1), w = SPEED * player.dir;
+        const T = Math.abs(ahead / w), th = player.a + w * T, R0 = R_ORBIT + v * T;
+        debris.push({ x: cx + Math.cos(th) * R0, y: cy + Math.sin(th) * R0, vx: -Math.cos(th) * v, vy: -Math.sin(th) * v,
+          r: 11 * u, verts: [1, 1, 1, 1, 1, 1, 1], rot: 0, spin: 0, near: false, harmless: false });
+      },
+      ufo(ahead) { const a = player.a + player.dir * ahead;
+        ufos.push({ a, hoverR: R_ORBIT, spin: 0, x: cx + Math.cos(a) * R_ORBIT, y: cy + Math.sin(a) * R_ORBIT,
+          r: 11 * u, bob: 0, age: 0, charging: false, chargeT: 0, fireTimer: 99, lifespan: 99 }); },
+      shot(fromDist, speed) {   // a shot fired straight at where the ship will be
+        const w = SPEED * player.dir, v = speed * u, T = fromDist * u / v, a = player.a + w * T;
+        const tx = cx + Math.cos(a) * R_ORBIT, ty = cy + Math.sin(a) * R_ORBIT;
+        const sx = tx + Math.cos(a) * fromDist * u, sy = ty + Math.sin(a) * fromDist * u;
+        shots.push({ x: sx, y: sy, vx: -Math.cos(a) * v, vy: -Math.sin(a) * v }); },
+      // audio
+      menuStart, menuStop, musicStart, musicStop, musicSlow, mute: () => el.mute.click(),
+      hide() { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+        document.dispatchEvent(new Event('visibilitychange')); },
+      show() { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+        document.dispatchEvent(new Event('visibilitychange')); },
+    };
+  }
 })();
 </script>
 <!-- ARTIFACT-END -->

@@ -91,6 +91,10 @@ python3 -m http.server 8000
 # then open http://localhost:8000
 ```
 
+## Release checks
+
+Before shipping: `python3 tests/check.py` (asset rules + service-worker scenarios) and `tests/regression.html` in a browser (gameplay, collisions, shields, run state, audio). See [tests/README.md](tests/README.md). If you replace a song's audio, run `python3 tests/check.py --fix` so installed copies pick it up.
+
 ## Tech
 
 Vanilla HTML/CSS/JS, rendered on a `<canvas>`. No frameworks, no build tooling. Sound effects are synthesized at runtime with the Web Audio API; the soundtrack is a single MP3 played through the same mixer.
