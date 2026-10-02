@@ -72,25 +72,6 @@
   #shieldBadge.on{display:flex}
   #shieldBadge .v{color:#6FE3FF; letter-spacing:.12em}
   #shieldBadge.hit .v{color:var(--danger)}
-  /* buff tracker: every active power-up by name, with how long it has left */
-  #items{
-    position:absolute; left:0; right:0; bottom:0; z-index:2; pointer-events:none;
-    display:flex; flex-wrap:wrap; justify-content:center; gap:6px;
-    padding:10px 14px; padding-bottom:max(12px, env(safe-area-inset-bottom));
-    font-family:var(--mono); letter-spacing:.14em;
-  }
-  #items .buff{
-    width:112px; box-sizing:border-box; padding:5px 7px 6px;
-    border-left:2px solid currentColor; background:rgba(7,10,20,.72);
-    display:flex; flex-direction:column; gap:3px;
-  }
-  #items .buff .n{font-size:9px; letter-spacing:.08em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
-  #items .buff .s{font-size:11px; color:var(--ice); font-variant-numeric:tabular-nums; letter-spacing:.06em; white-space:nowrap}
-  #items .buff .bar{height:2px; background:rgba(168,203,230,.15); overflow:hidden}
-  #items .buff .bar i{display:block; height:100%; background:currentColor; transform-origin:left}
-  #items .buff.timed .s{color:#fff}
-  #items .buff.off{opacity:.35}
-  #items .buff.off .s{text-decoration:line-through}
   /* game over: what you picked up this run */
   /* victory: the game-over panel, in gold */
   #over.win .eyebrow{color:#FFD24C}
@@ -273,7 +254,6 @@
     <button id="mute" type="button" aria-pressed="false">SOUND ON</button>
   </div>
 
-  <div id="items"></div>
 
   <div id="overlay">
     <div class="panel" id="title">
@@ -375,7 +355,6 @@
     shieldV: document.querySelector('#shieldBadge .v'),
     overBuffs: document.getElementById('overBuffs'),
     overBuffsList: document.getElementById('overBuffsList'),
-    items: document.getElementById('items'),
   };
 
   /* ---------- geometry ---------- */
@@ -516,9 +495,14 @@
   // the song's key.
   const SONGS = {
     main:    { url: 'music/crossing-the-meteor-belt.mp3', loopEnd: 172.2, shift: 0 },
+    pursuit: { url: 'music/phase-eight-pursuit.mp3',      loopEnd: 168.4, shift: -2, major: true },
     extreme: { url: 'music/last-save-point.mp3',          loopEnd: 171.6, shift: 3 },
   };
-  const songFor = () => (difficulty === 'extreme' ? SONGS.extreme : SONGS.main);
+  // EASY: Crossing the Meteor Belt; NORMAL/HARD: Phase Eight Pursuit;
+  // EXTREME: Last Save Point. (All four songs, menu included, measure
+  // within 0.3 dB of each other, so they share one volume.)
+  const songFor = () => (difficulty === 'extreme' ? SONGS.extreme
+    : difficulty === 'easy' ? SONGS.main : SONGS.pursuit);
   // the title / game-over screens get their own song, "Ready for Launch"
   const MENU_SONG = { url: 'music/ready-for-launch.mp3', loopEnd: 164.5 };
   const MENU_FADE_IN = 1.5, MENU_FADE_OUT = 0.8, HANDOFF_GAP = 0.05;   // seconds
@@ -529,6 +513,9 @@
   const SHIMMER = [72, 76, 79, 84, 88, 91, 96];   // C major, rising
   const FANFARE = [60, 63, 67, 72, 75, 79];       // C minor, rising
   const FANFARE_CHORD = [60, 63, 67];
+  // major-key songs get the fanfare in major, so it doesn't clash
+  const FANFARE_MAJ = [60, 64, 67, 72, 76, 79];
+  const FANFARE_CHORD_MAJ = [60, 64, 67];
   const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
   // fetch the selected difficulty's song as soon as it's picked (and on page
@@ -681,7 +668,7 @@
   // dropping with it while the mix goes dark and roomy. When it ends it
   // snaps back up quickly so the pace never drags, and a crash marks the
   // song landing back on its feet.
-  const SLOW_RATE = 0.6;
+  const SLOW_RATE = 0.7;
   const SLOW_BEND = 1200 * Math.log2(SLOW_RATE);   // the same drop, in cents
   const SLOW_IN = 1.2, SLOW_OUT = 0.4;             // seconds
   function musicSlow(on) {
@@ -706,9 +693,12 @@
     };
     if (music.src) glide(music.src.playbackRate, on ? SLOW_RATE : 1, false);
     glide(b.bend.offset, on ? SLOW_BEND : 0, false);
-    glide(b.tone.frequency, on ? 1100 : 18000, true);
-    glide(b.wet.gain, on ? 0.6 : 0.3, false);
-    glide(b.send.gain, on ? 0.5 : 0, false);
+    // only a gentle softening and a touch of room -- the song should still
+    // sound like itself, just slower (heavier muffling made it sound like
+    // a different track)
+    glide(b.tone.frequency, on ? 7000 : 18000, true);
+    glide(b.wet.gain, on ? 0.38 : 0.3, false);
+    glide(b.send.gain, on ? 0.15 : 0, false);
     if (!on) {
       noiseHit(a, b.out, t, dur, 0.05, 'bandpass', 3000);   // riser-ish whoosh
       noiseHit(a, b.out, t + dur, 1.8, 0.12, 'highpass', 5000).connect(b.verb);
@@ -730,8 +720,8 @@
     if (!a || !music.timer) return;
     const t = a.currentTime + 0.01, b = music.bus, k = music.shift;
     noiseHit(a, b.out, t, 1.8, 0.12, 'highpass', 5000).connect(b.verb);
-    for (const m of FANFARE_CHORD) swell(a, b, t, mtof(m + 12 + k), 1.4, 0.02, 4500);
-    FANFARE.forEach((m, i) => {
+    for (const m of (music.major ? FANFARE_CHORD_MAJ : FANFARE_CHORD)) swell(a, b, t, mtof(m + 12 + k), 1.4, 0.02, 4500);
+    (music.major ? FANFARE_MAJ : FANFARE).forEach((m, i) => {
       voice(a, b.out, t + i * 0.07, mtof(m + 12 + k), 0.2, 'square', 0.03, 5000).connect(b.echo);
     });
   }
@@ -768,7 +758,7 @@
     music.stage = 0; music.slow = false; music.src = null;
     music.timer = 1; music.run++;
     const song = songFor();
-    music.shift = song.shift;
+    music.shift = song.shift; music.major = !!song.major;
     playSong(a, music.run, song);
   }
   function musicStop(quick) {
@@ -1066,51 +1056,6 @@
   }
   const slowLen = () => has('chrono') ? 5 : SLOW_TIME;
   const SLOW_COLOR = '#B79CFF';
-  // The buff tracker: one card per power-up you have right now, each with a
-  // status line and a bar. Timed ones count down; the rest say what they're
-  // up to (charging, ready, spent) or that they last the whole run.
-  function buffStatus(it) {
-    const n = owned[it.id];
-    switch (it.id) {
-      case 'patch': return { s: n > 1 ? 'PATCHED x' + n : '+1 SHIELD', f: 1 };
-      case 'echo': return { s: echoCount + '/10 MISSES', f: echoCount / 10 };
-      case 'nova': return { s: 'NEXT IN ' + Math.ceil(novaT) + 'S', f: novaT / NOVA_EVERY, timed: true };
-      case 'moon': return moon && moon.cd > 0
-        ? { s: 'CHARGE ' + moon.cd.toFixed(1) + 'S', f: 1 - moon.cd / MOON_COOLDOWN, timed: true }
-        : { s: 'READY', f: 1 };
-      case 'last': return lastStandUsed ? { s: 'SPENT', f: 0, off: true } : { s: 'READY', f: 1 };
-      default: return { s: 'ALL RUN', f: 1 };
-    }
-  }
-  let trackerKey = '', trackerRows = [];
-  function renderItems() {
-    const rows = [];
-    if (slowT > 0) rows.push({ key: 'slow', name: 'SLOW-MO', color: SLOW_COLOR,
-      s: slowT.toFixed(1) + 'S LEFT', f: slowT / slowLen(), timed: true });
-    for (const it of ITEMS) {
-      if (!owned[it.id]) continue;
-      rows.push(Object.assign({ key: it.id, color: RARITY[it.rarity].color,
-        name: it.name }, buffStatus(it)));
-    }
-    // only rebuild the cards when the set of buffs changes; otherwise just
-    // refresh their text and bars
-    const key = rows.map((r) => r.key).join('|');
-    if (key !== trackerKey) {
-      trackerKey = key;
-      el.items.innerHTML = rows.map((r) =>
-        '<div class="buff" style="color:' + r.color + '"><span class="n">' + r.name +
-        '</span><span class="s"></span><span class="bar"><i></i></span></div>').join('');
-      trackerRows = Array.from(el.items.children).map((c) =>
-        ({ c, s: c.querySelector('.s'), bar: c.querySelector('i'), text: null, f: null }));
-    }
-    rows.forEach((r, i) => {
-      const t = trackerRows[i], f = Math.max(0, Math.min(1, r.f));
-      if (t.text !== r.s) { t.text = r.s; t.s.textContent = r.s; }
-      if (t.f !== f) { t.f = f; t.bar.style.transform = 'scaleX(' + f.toFixed(3) + ')'; }
-      t.c.classList.toggle('timed', !!r.timed);
-      t.c.classList.toggle('off', !!r.off);
-    });
-  }
   function renderOverBuffs() {
     const chips = [];
     const chip = (name, n, color) => chips.push('<span class="chip" style="color:' + color + '">' +
@@ -1137,7 +1082,6 @@
     owned = {}; novas = []; reward = null; hitStopT = 0;
     moon = null; echoCount = 0; novaT = 0; lastStandUsed = false;
     buffCount = 0; callout = null;
-    renderItems();
     nextSlow = SLOW_DIFF[difficulty] * (0.6 + Math.random() * 0.4);
     planetStage = 0;
     boss = null; bossDelay = BOSS_DELAY; land = null; won = false; shipRad = 0;
@@ -1860,7 +1804,8 @@
     // shockwaves: sweep outward from the planet, erasing hazards they pass
     for (let n = novas.length - 1; n >= 0; n--) {
       const nv = novas[n];
-      nv.r += 1500 * u * rdt;
+      // Nova Pulse's own wave travels slower, so you can actually see it go out
+      nv.r += (nv.slow ? 520 : 1500) * u * rdt;
       const inside = (o) => Math.hypot(o.x - cx, o.y - cy) < nv.r;
       for (let i = debris.length - 1; i >= 0; i--) {
         if (!inside(debris[i])) continue;
@@ -1884,7 +1829,10 @@
       novaT -= dt;
       if (novaT <= 0) {
         novaT = NOVA_EVERY;
-        novas.push({ r: R_PLANET, maxR: R_ORBIT * 1.9, full: false, color: '#FFD24C' });
+        novas.push({ r: R_PLANET, maxR: R_ORBIT * 1.9, full: false, color: '#FFD24C', slow: true });
+        burst(cx, cy, REDUCE ? 10 : 30, '#FFD24C', 220 * u);
+        shake = Math.max(shake, REDUCE ? 0 : 7 * u);
+        announce('NOVA PULSE', 'CLEARED THE SPACE AROUND THE PLANET', '#FFD24C');
         sfx.nova();
       }
     }
@@ -1920,8 +1868,6 @@
     el.shieldBadge.classList.toggle('on', playing && (shields > 0 || shieldHitT > 0));
     el.shieldBadge.classList.toggle('hit', shieldHitT > 0);
     el.shieldV.textContent = '●'.repeat(shields) + '○'.repeat(SHIELD_MAX - shields);
-    if (playing) renderItems();
-    el.items.style.display = state === 'play' ? '' : 'none';
   }
 
   /* ---------- draw ---------- */
