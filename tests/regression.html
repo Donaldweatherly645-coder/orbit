@@ -43,6 +43,7 @@
   let pass = 0, fail = 0, skip = 0;
   const G = () => frame.contentWindow.__orbit;
   const S = () => G().snap();
+  const fdoc = () => frame.contentWindow.document;
 
   function section(name) { const r = T.insertRow(); const th = document.createElement('th'); th.colSpan = 2; th.textContent = name; r.appendChild(th); }
   function report(name, ok, detail) {
@@ -195,11 +196,27 @@
       G().hide(); await sleep(400); const hidden = S().audio;
       G().show(); await sleep(600); const back = S().audio;
       await check('tab/app interruption: suspends, then recovers', () => [hidden === 'suspended' && back === 'running', `hidden: ${hidden}, back: ${back}`]);
+      const lbl = () => fdoc().getElementById('mute').textContent, aria = () => fdoc().getElementById('mute').getAttribute('aria-pressed');
+      await check('the sound button names its action and matches the real state', async () => {
+        const onL = lbl(), onA = aria(); G().mute(); await sleep(300); const offL = lbl(), offA = aria(), offVol = S().musicVol;
+        G().mute(); await sleep(300);
+        return [onL === 'TAP TO MUTE' && onA === 'true' && offL === 'TAP FOR SOUND' && offA === 'false' && offVol < 0.01 && lbl() === 'TAP TO MUTE',
+          `on: "${onL}" (${onA}); muted: "${offL}" (${offA}), music ${offVol.toFixed(3)}; back: "${lbl()}"`]; });
+      await check('pause freezes the run and silences audio; resume keeps the mute setting', async () => {
+        G().quiet(); const e0 = S().elapsed; G().pause(true); await sleep(400);
+        const a = S(), btnHidden = fdoc().getElementById('pausePanel').classList.contains('hidden');
+        G().press(); G().step(30); const e1 = S().elapsed;
+        G().pause(false); await sleep(200);
+        return [a.audio === 'suspended' && !btnHidden && e1 === e0 && !S().muted && !G().paused(),
+          `while paused: audio ${a.audio}, clock ${e0.toFixed(2)} -> ${e1.toFixed(2)}, panel shown ${!btnHidden}; after: muted ${S().muted}`]; });
       G().quiet(); G().rock(0.5, 1); stepUntilOver(120);
       await sleep(2600);
-      await check('after a crash the menu song returns only once the game song is silent', () => {
-        const s = S(); return [s.menuOn && s.menuStartedAt >= s.musicSilentAt,
-          `game song silent at ${s.musicSilentAt.toFixed(3)}s, menu starts ${s.menuStartedAt.toFixed(3)}s`]; });
+      await check('after a crash the run song keeps playing under the results', () => {
+        const s = S(); return [s.state === 'over' && s.musicOn && !s.menuOn, `state ${s.state}, run song on ${s.musicOn}, menu song on ${s.menuOn}`]; });
+      G().backToMenu(); await sleep(2600);
+      await check('BACK TO MAIN MENU: the run song fades out, then the menu song fades in', () => {
+        const s = S(); return [s.state === 'menu' && !s.musicOn && s.menuOn && s.menuStartedAt >= s.musicSilentAt,
+          `state ${s.state}; game song silent at ${s.musicSilentAt.toFixed(3)}s, menu starts ${s.menuStartedAt.toFixed(3)}s`]; });
     }
 
     section('6. Install and offline (this page\'s server)');
