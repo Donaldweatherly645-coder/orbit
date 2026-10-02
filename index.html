@@ -85,20 +85,44 @@
     font-family:var(--mono); font-size:10px; letter-spacing:.14em;
     border:1px solid currentColor; padding:5px 8px;
   }
-  #mute{
-    pointer-events:auto; margin-left:14px; align-self:center;
+  #mute,#pause{
+    pointer-events:auto; margin-left:14px; align-self:center; min-height:44px; min-width:44px;
     background:transparent; border:1px solid var(--line); color:var(--slate);
     font-family:var(--mono); font-size:10px; letter-spacing:.18em;
     padding:7px 10px; cursor:pointer; transition:color .15s,border-color .15s;
   }
-  #mute:hover,#mute:focus-visible{color:var(--ice); border-color:var(--slate)}
-  #mute:focus-visible{outline:2px solid var(--sodium); outline-offset:2px}
+  #mute:hover,#mute:focus-visible,#pause:hover,#pause:focus-visible{color:var(--ice); border-color:var(--slate)}
+  #mute:focus-visible,#pause:focus-visible{outline:2px solid var(--sodium); outline-offset:2px}
+  #mute.off{color:var(--ice); border-color:rgba(168,203,230,.45)}
+  /* sound + pause: their own corner, so the readouts can never push them
+     out of the top right */
+  #ctl{
+    position:absolute; top:max(14px, env(safe-area-inset-top)); right:max(14px, env(safe-area-inset-right));
+    display:flex; flex-direction:column; align-items:flex-end; gap:6px;
+  }
+  #hud{padding-right:calc(max(14px, env(safe-area-inset-right)) + 136px)}
+  #ctl #mute,#ctl #pause{margin:0; align-self:auto}
+  #mute{width:128px; padding:0 6px}
+  #pause{font-size:12px; letter-spacing:0}
+  /* the top bar sits above the menus so the sound button is always
+     reachable; its readouts only matter during a run */
+  #hud{z-index:4}
+  #stage:not(.playing) #hud .read{visibility:hidden}
+  #pausePanel{max-width:260px; padding:26px 24px 18px}
+  #pausePanel .prompt{margin-top:6px; border:1px solid rgba(255,154,60,.55)}
+  .menuBtn{
+    font-family:var(--mono); font-size:10px; letter-spacing:.22em;
+    color:var(--slate-lit); background:transparent; border:1px solid var(--line);
+    padding:9px 14px; min-height:44px; margin-top:10px; cursor:pointer;
+  }
+  .menuBtn:hover{color:var(--ice); border-color:var(--slate)}
+  .menuBtn:focus-visible{outline:2px solid var(--sodium); outline-offset:2px}
 
   /* ---- overlay panels ---- */
   #overlay{
     position:absolute; inset:0; z-index:3; display:grid; place-items:center;
     padding:20px; pointer-events:none; overflow-y:auto;
-    padding:max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+    padding:max(72px, calc(env(safe-area-inset-top) + 54px)) max(20px, env(safe-area-inset-right))
             max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
   }
   .panel{
@@ -108,7 +132,7 @@
     /* each screen scrolls itself. The overlay around it ignores touches (so
        taps reach the game), and iPhone won't scroll an area you can't
        touch -- so the panel, which you can, is the scroll box */
-    max-height:calc(100vh - 40px); max-height:calc(100dvh - 40px);
+    max-height:calc(100vh - 92px); max-height:calc(100dvh - 92px);
     overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;
     touch-action:pan-y;
   }
@@ -221,17 +245,6 @@
     padding:9px 14px; min-height:44px; margin-top:16px; cursor:pointer;
   }
   .achBtn:hover{border-color:#FFD24C}
-  /* sound: browsers stay silent until the first tap, so the title screen
-     offers one -- styled like the other controls, gone once sound is on */
-  .soundBtn{
-    font-family:var(--mono); font-size:11px; letter-spacing:.22em;
-    color:var(--ice); background:transparent; border:1px solid rgba(168,203,230,.45);
-    padding:10px 16px; min-height:44px; margin:2px 0 6px; cursor:pointer;
-  }
-  .soundBtn:hover{border-color:var(--ice)}
-  .soundBtn:focus-visible{outline:2px solid var(--sodium); outline-offset:2px}
-  .soundBtn .note{display:inline-block; margin-right:8px; animation:notePulse 1.6s ease-in-out infinite}
-  @keyframes notePulse{50%{opacity:.35; transform:translateY(-2px)}}
   .achBtn:focus-visible{outline:2px solid var(--sodium); outline-offset:2px}
   #achList{display:flex; flex-direction:column; gap:6px; margin:18px 0 6px; text-align:left}
   .ach{display:flex; gap:12px; align-items:center; padding:10px 12px; border:1px solid var(--line);
@@ -334,7 +347,7 @@
       gap:10px 14px; padding:14px;
       padding-top:max(14px, env(safe-area-inset-top));
       padding-left:max(14px, env(safe-area-inset-left));
-      padding-right:max(14px, env(safe-area-inset-right));
+      padding-right:calc(max(14px, env(safe-area-inset-right)) + 136px);
     }
   }
 </style>
@@ -350,7 +363,10 @@
     <div class="read" id="best"><span class="k">BEST</span><span class="v">0</span></div>
     <div class="read" id="shieldBadge"><span class="k">SHIELD</span><span class="v">●</span></div>
     <div class="read" id="combo"><span class="k">CHAIN</span><span class="v">x1</span></div>
-    <button id="mute" type="button" aria-pressed="false">SOUND ON</button>
+    <div id="ctl">
+      <button id="mute" type="button" aria-pressed="false">TAP FOR SOUND</button>
+      <button id="pause" type="button" class="hidden" aria-label="Pause">&#10074;&#10074;</button>
+    </div>
   </div>
 
 
@@ -369,7 +385,6 @@
       </div>
       <button class="prompt blink playBtn" type="button">PRESS TO LAUNCH</button>
       <div class="more">
-        <button class="soundBtn" type="button" id="soundBtn"><span class="note">&#9834;</span>TAP FOR SOUND</button>
         <p class="bestLine">BEST <span id="titleBest">0</span></p>
         <button class="achBtn" type="button" data-ach-open>ACHIEVEMENTS <span data-ach-count>0/0</span></button>
         <button class="installBtn hidden" type="button" id="installBtn">&#8681; PLAY OFFLINE</button>
@@ -420,6 +435,11 @@
       <button class="prompt" type="button" data-popup-close>BACK</button>
     </div>
 
+    <div class="panel hidden" id="pausePanel" role="dialog" aria-label="Paused">
+      <p class="eyebrow">PAUSED</p>
+      <button class="prompt" type="button" id="resumeBtn">&#9654; RESUME</button>
+    </div>
+
     <div class="panel hidden" id="over">
       <p class="eyebrow" id="overEyebrow">ORBIT LOST</p>
       <p class="final" id="finalScore">0</p>
@@ -433,6 +453,7 @@
         <button class="diff" type="button" data-diff="extreme">EXTREME</button>
       </div>
       <button class="prompt blink playBtn" type="button" id="againPrompt">PRESS TO RELAUNCH</button>
+      <button class="menuBtn" type="button" id="menuBtn">BACK TO MAIN MENU</button>
       <div class="more" id="overMore">
         <div class="stats">
           <div class="stat"><span class="k">TIME ALOFT</span><span class="v" id="stTime">0.0s</span></div>
@@ -467,6 +488,9 @@
     combo: document.getElementById('combo'),
     comboV: document.querySelector('#combo .v'),
     mute: document.getElementById('mute'),
+    pause: document.getElementById('pause'),
+    pausePanel: document.getElementById('pausePanel'),
+    stage: document.getElementById('stage'),
     title: document.getElementById('title'),
     over: document.getElementById('over'),
     finalScore: document.getElementById('finalScore'),
@@ -533,6 +557,17 @@
 
   /* ---------- audio ---------- */
   let actx = null, muted = false;
+  // Sound is "on" once the browser has allowed audio and you haven't muted
+  // it. The one sound button (top right, on every screen) always names what
+  // tapping it will do.
+  let audioReady = false, soundAtPress = null, paused = false;
+  const soundOn = () => !muted && audioReady;
+  function syncSound() {
+    const on = soundOn();
+    el.mute.textContent = on ? 'TAP TO MUTE' : 'TAP FOR SOUND';
+    el.mute.setAttribute('aria-pressed', String(on));
+    el.mute.classList.toggle('off', !on);
+  }
   function ac() {
     if (!actx) {
       // iPhone: count as media playback, not a ringer sound, so the silent
@@ -540,10 +575,14 @@
       try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
       try { actx = new (window.AudioContext || window.webkitAudioContext)(); }
       catch (e) { return null; }
+      actx.addEventListener('statechange', () => {
+        if (actx.state === 'running' && !audioReady) { audioReady = true; syncSound(); }
+      });
     }
     // 'suspended' before the first allowed tap, or 'interrupted' on iPhone
     // after a call or switching apps -- either way, try to get going again
-    if (actx.state !== 'running' && actx.state !== 'closed') actx.resume().catch(() => {});
+    // (never while paused: pausing holds every sound until you resume)
+    if (actx.state !== 'running' && actx.state !== 'closed' && !paused) actx.resume().catch(() => {});
     return actx;
   }
   function tone(f1, f2, dur, type, vol) {
@@ -808,7 +847,7 @@
   const SLOW_RATE = 0.7;
   const SLOW_BEND = 1200 * Math.log2(SLOW_RATE);   // the same drop, in cents
   const SLOW_IN = 1.2, SLOW_OUT = 0.4;             // seconds
-  function musicSlow(on) {
+  function musicSlow(on, quiet) {
     const a = actx;
     if (!a || !music.timer) return;
     const t = a.currentTime, b = music.bus;
@@ -836,7 +875,7 @@
     glide(b.tone.frequency, on ? 7000 : 18000, true);
     glide(b.wet.gain, on ? 0.38 : 0.3, false);
     glide(b.send.gain, on ? 0.15 : 0, false);
-    if (!on) {
+    if (!on && !quiet) {
       noiseHit(a, b.out, t, dur, 0.05, 'bandpass', 3000);   // riser-ish whoosh
       noiseHit(a, b.out, t + dur, 1.8, 0.12, 'highpass', 5000).connect(b.verb);
     }
@@ -880,14 +919,15 @@
       const lvl = a.createGain(); lvl.gain.value = SONG_LEVEL;
       src.connect(lvl); lvl.connect(music.bus.out);
       // never overlap the menu song: start exactly as its fade-out ends
-      music.startAt = Math.max(a.currentTime, menu.silentAt + HANDOFF_GAP);
+      // (and on a restart, not before the last run's song has faded)
+      music.startAt = Math.max(a.currentTime, menu.silentAt + HANDOFF_GAP, music.silentAt);
       src.start(music.startAt);
       music.src = src;
     });
   }
   function musicStart() {
     const a = ac(); if (!a) return;
-    musicStop(true);
+    musicStop(RESTART_FADE);
     const g = a.createGain();
     g.gain.value = muted ? 0 : MUSIC_VOL;
     g.connect(a.destination);
@@ -898,15 +938,18 @@
     music.shift = song.shift; music.major = !!song.major;
     playSong(a, music.run, song);
   }
+  // quick: true (a near-cut), false (the long 1.4s fade), or a fade in seconds
+  const RESTART_FADE = 0.35;
   function musicStop(quick) {
     if (!music.timer) return;
     music.timer = 0;
     const g = music.gain, bus = music.bus, src = music.src, t = actx.currentTime;
+    const fade = typeof quick === 'number' ? quick : (quick ? 0.05 : 1.4);
     music.src = null;
     g.gain.cancelScheduledValues(t);
     g.gain.setValueAtTime(g.gain.value, t);
-    g.gain.linearRampToValueAtTime(0, t + (quick ? 0.05 : 1.4));
-    music.silentAt = t + (quick ? 0.05 : 1.4);
+    g.gain.linearRampToValueAtTime(0, t + fade);
+    music.silentAt = t + fade;
     setTimeout(() => {
       g.disconnect();
       try { bus.bend.stop(); } catch (e) {}
@@ -917,13 +960,17 @@
   document.addEventListener('visibilitychange', () => {
     if (!actx) return;
     if (document.hidden) actx.suspend();
-    else if (state === 'play' || state === 'finale' || menu.on) actx.resume();
+    else if (!paused && (state === 'play' || state === 'finale' || menu.on || music.timer)) actx.resume();
   });
 
   el.mute.addEventListener('click', () => {
-    muted = !muted;
-    el.mute.textContent = muted ? 'SOUND OFF' : 'SOUND ON';
-    el.mute.setAttribute('aria-pressed', String(muted));
+    // judged by how things stood when the tap began: that same tap may
+    // have just unlocked audio, and must not then immediately mute it
+    const wasOn = soundAtPress !== null ? soundAtPress : soundOn();
+    soundAtPress = null;
+    muted = wasOn;
+    ac();
+    syncSound();
     if (music.timer) {
       const t = actx.currentTime;
       music.gain.gain.cancelScheduledValues(t);
@@ -1328,6 +1375,7 @@
     devEl.devTag.lastElementChild.textContent =
       [devGod() && 'GOD', lv > 1 && 'P' + lv].filter(Boolean).join(' ');
     state = 'play';
+    paused = false; el.pausePanel.classList.add('hidden');
     el.title.classList.add('hidden');
     el.over.classList.add('hidden');
     document.querySelectorAll('.popup').forEach((p) => p.classList.add('hidden'));
@@ -1338,6 +1386,32 @@
     music.stage = planetStage;
   }
 
+  // Pause: the game stops dead (update isn't run, so every timer, hazard and
+  // countdown holds) and all sound stops with it. Resuming brings the sound
+  // back exactly as it was -- the mute setting is never touched.
+  function setPaused(on) {
+    if (on === paused || (on && state !== 'play')) return;
+    paused = on;
+    el.pausePanel.classList.toggle('hidden', !on);
+    if (actx) { if (on) actx.suspend(); else if (!document.hidden) actx.resume().catch(() => {}); }
+    if (on) document.getElementById('resumeBtn').focus({ preventScroll: true });
+    else if (document.activeElement) document.activeElement.blur();
+  }
+  el.pause.addEventListener('click', () => setPaused(true));
+  document.getElementById('resumeBtn').addEventListener('click', () => setPaused(false));
+  // game over -> title: the run's song fades out, then the menu song fades in
+  function backToMenu() {
+    if (state !== 'over') return;
+    state = 'menu';
+    reset(true);
+    el.over.classList.add('hidden');
+    el.title.classList.remove('hidden');
+    document.querySelector('#title .more').appendChild(devEl.devBox);
+    el.overlay.scrollTop = 0;
+    if (actx) { musicStop(false); menuStart(); }
+  }
+  document.getElementById('menuBtn').addEventListener('click', backToMenu);
+
   function die() {
     state = 'over';
     slowT = 0; hitStopT = 0;
@@ -1345,7 +1419,9 @@
     readyAt = deathAt + 700;
     shake = REDUCE ? 0 : 26 * u;
     flash = 1;
-    musicStop(false);
+    // the run's song plays on under the results; it only gives way when you
+    // relaunch or go back to the menu. A slowed song snaps back, quietly.
+    if (music.slow) musicSlow(false, true);
     if (boss) { boss.beam = null; boss.turrets.forEach((tu) => { tu.charging = false; }); }
     burst(px(), py(), REDUCE ? 16 : 46, '#FF9A3C', 320 * u);
     burst(px(), py(), REDUCE ? 8 : 22, '#FFE2B0', 180 * u);
@@ -1523,7 +1599,7 @@
   /* ---------- input ---------- */
   function press(e) {
     // a list is open on top of the menu: no tap or key may launch from here
-    if (achOpen()) return;
+    if (achOpen() || paused) return;
     const t = e && e.target;
     if (t && t.closest) {
       const btn = t.closest('button');
@@ -1557,6 +1633,11 @@
     }
     if (e.code === 'KeyM') el.mute.click();
   });
+  window.addEventListener('keydown', (e) => {
+    if (state !== 'play') return;
+    if (e.code === 'Escape' || e.code === 'KeyP') { e.preventDefault(); setPaused(!paused); }
+    else if (paused && (e.code === 'Space' || e.code === 'Enter')) { e.preventDefault(); setPaused(false); }
+  }, true);
 
   /* ---------- spawning ---------- */
   /* ---------- snagged rocks ---------- */
@@ -2228,7 +2309,7 @@
     // the finale: the mothership turns up once the final planet has settled in
     if (playing && !boss && planetStage === PLANET_STAGES.length - 1) {
       bossDelay -= rdt;
-      if (bossDelay <= 0) spawnBoss();
+      if (bossDelay <= 0 && !reward) spawnBoss();
     }
     if (boss && updateBoss(rdt, dt, ppx, ppy) === 'dead') return;
 
@@ -2253,7 +2334,7 @@
         }
       }
       if (nv.r > nv.maxR) {
-        if (nv.slow && state === 'play') float(cx, cy - R_PLANET - 18 * u, nv.hits ? 'NOVA \u00d7' + nv.hits : 'NOVA: ALL CLEAR', UI.upgrade);
+        if (nv.slow && state === 'play') announce('NOVA PULSE', nv.hits ? nv.hits + ' CLEARED' : 'ALL CLEAR', UI.upgrade);
         novas.splice(n, 1);
       }
     }
@@ -2261,7 +2342,7 @@
     if (callout) { callout.t += rdt; if (callout.t > CALLOUT_TIME) callout = null; }
     for (const q of calloutQ) q.queued += rdt;
     while (calloutQ.length && calloutQ[0].queued > 3) calloutQ.shift();   // stale: drop it
-    if (!callout && !reward && calloutQ.length) callout = calloutQ.shift();
+    if (!callout && !reward && calloutQ.length && !(has('nova') && novaT < 3 && state === 'play')) callout = calloutQ.shift();
 
     if (playing && has('echo') && shields < shieldMax()) {
       if (echoBank) { echoBank = 0; shields++; shieldGainFx('ECHO +1'); }
@@ -2273,7 +2354,6 @@
         novas.push({ r: R_PLANET, maxR: R_ORBIT * 1.9, full: false, color: UI.upgrade, slow: true });
         burst(cx, cy, REDUCE ? 10 : 30, UI.upgrade, 220 * u);
         shake = Math.max(shake, REDUCE ? 0 : 7 * u);
-        announce('NOVA PULSE', 'CLEARING NEAR THE PLANET', UI.upgrade);
         sfx.nova();
       }
     }
@@ -2800,7 +2880,9 @@
 
     // nova pulse: a gold ring around the planet fills up toward the next
     // shockwave, and blinks for the last few seconds as a heads-up
-    if (has('nova') && state === 'play') {
+    // (a callout box sits over the planet; the ring steps aside while it's
+    // up -- and callouts hold off during the ring's final 3s countdown)
+    if (has('nova') && state === 'play' && !(callout && !reward)) {
       const f = 1 - Math.max(0, Math.min(1, novaT / NOVA_EVERY));
       const soon = novaT < 3;
       ctx.save();
@@ -3046,7 +3128,11 @@
   // starts on the first one while you're on the title screen. Capture
   // phase, so it runs before a tap that launches the game (which then
   // cleanly cancels it).
-  const firstSound = () => { if (state === 'menu' || state === 'over') { ac(); menuStart(); } };
+  const menuSongWanted = () => state === 'menu' || (state === 'over' && !music.timer);
+  const snapSound = () => { soundAtPress = soundOn(); };
+  window.addEventListener('pointerdown', snapSound, true);
+  window.addEventListener('keydown', snapSound, true);
+  const firstSound = () => { ac(); if (menuSongWanted()) menuStart(); };
   window.addEventListener('pointerdown', firstSound, true);
   window.addEventListener('keydown', firstSound, true);
   // Phones (iPhone Safari above all) only let sound start when a finger
@@ -3065,20 +3151,21 @@
         audioUnlocked = true;
       } catch (e) {}
     }
-    if (state === 'menu' || state === 'over') menuStart();
-    // sound is on now, so the TAP FOR SOUND button has done its job
-    document.getElementById('soundBtn').classList.add('hidden');
+    if (menuSongWanted()) menuStart();
+    if (a.state === 'running' && !audioReady) { audioReady = true; syncSound(); }
   }
   for (const ev of ['pointerup', 'touchend', 'click']) window.addEventListener(ev, unlockAudio, { capture: true, passive: true });
 
   function frame(now) {
     const dt = Math.min(0.033, (now - last) / 1000);
     last = now;
-    update(dt);
+    if (!paused) update(dt);
     draw(now);
-    // back on the game-over screen: bring the menu song back. menuStart
-    // itself waits for the game song's fade-out to finish first.
-    if (state === 'over' && actx && !menu.on) menuStart();
+    el.stage.classList.toggle('playing', state === 'play' || state === 'finale');
+    el.pause.classList.toggle('hidden', state !== 'play');
+    // a game-over screen with no run song (after a victory, whose finale
+    // ends it): bring the menu song back. menuStart waits for silence first.
+    if (state === 'over' && actx && !menu.on && !music.timer) menuStart();
     requestAnimationFrame(frame);
   }
 
@@ -3142,7 +3229,7 @@
         musicSlow: music.slow, now: actx ? actx.currentTime : 0,
         musicVol: music.gain ? music.gain.gain.value : null, menuVol: menu.gain ? menu.gain.gain.value : null,
       }),
-      step: (n, dt) => { for (let i = 0; i < n && (state === 'play' || state === 'finale'); i++) update(dt || 1 / 60); },
+      step: (n, dt) => { for (let i = 0; i < n && !paused && (state === 'play' || state === 'finale'); i++) update(dt || 1 / 60); },   // (like frame(): nothing runs while paused)
       setDifficulty, start, press: () => press(null), unlockAudio,
       quiet() {   // stop everything spawning, clear the field
         debris.length = 0; ufos.length = 0; shots.length = 0; sparks.length = 0;
@@ -3214,7 +3301,8 @@
       nearMiss: () => echoNearMiss(),
       mortal() { const h = window.__orbit; if (h._grant) grantItem = h._grant; if (h._take) takeHit = h._take; },
       // audio
-      menuStart, menuStop, musicStart, musicStop, musicSlow, mute: () => el.mute.click(),
+      menuStart, menuStop, musicStart, musicStop, musicSlow, mute: () => { soundAtPress = null; el.mute.click(); },
+      pause: (on) => setPaused(on), paused: () => paused, rewardOn: () => !!reward, calloutOn: () => !!(callout && !reward), backToMenu, soundLabel: () => el.mute.textContent,
       hide() { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
         document.dispatchEvent(new Event('visibilitychange')); },
       show() { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
