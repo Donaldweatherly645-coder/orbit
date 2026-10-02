@@ -15,13 +15,13 @@ Your ship is locked in a fixed orbit around the planet. Press the one button to 
 - **Catch the violet hourglass** for three seconds of slow motion: every hazard crawls at 40% speed while your ship keeps full speed, then time eases back up to normal.
 - **Watch for UFOs.** They hover nearby, glow, and charge up before firing a shot straight at wherever you are the instant they finish charging. Touching one is as lethal as debris. The further out you get, the more of them show up -- by the last planets before the Mothership, EASY can have 3 hovering at once and EXTREME up to 6. More UFOs means shots from more directions, not a wall of fire: UFOs share a fire budget (a cap on shots per second, growing gently with each planet), they never start charging at the same instant, only a few shots can be in the air at once, and they ease off while a heavy wave of debris is inbound.
 - **Survive long enough and the planet transforms.** It progresses through 20 stages the longer you last -- from a dull, dormant rock, through molten and crystalline forms, into something increasingly cosmic: rings appear, then moons, then a pulsing corona, building toward a final glowing, many-ringed, many-mooned form. Stages are paced by survival time (each spark you catch adds a one-second bonus), not raw score, so a hot spark chain can't blow through them in seconds. On NORMAL the first stage takes about 20-25 seconds, the gaps stretch to about 40 seconds near the top, and the final form arrives around the 8-10 minute mark. EASY is paced a little slower; HARD and EXTREME a little faster, since their runs are shorter.
-- **Every new planet is a payday.** A shockwave bursts from the planet and wipes the screen clear of debris, shots and UFOs, time freezes for a beat, a reward chime plays, the planet's name lands in a banner, and a cymbal crash and fanfare ring out over the soundtrack. You also get a random upgrade for the rest of the run:
+- **Every new planet is a payday.** A shockwave bursts from the planet and clears the debris, shots and UFOs close enough to reach your orbit within about a second (far-off ones stay, so the action picks straight back up), time freezes for a beat, you get a brief 0.6s of grace, a reward chime plays, the planet's name lands in a banner, and a cymbal crash and fanfare ring out over the soundtrack. You also get a random upgrade for the rest of the run:
 
   | Upgrade | Rarity | Effect |
   |---|---|---|
   | Hull Patch | Common (can repeat) | +1 shield layer |
   | Chrono Core | Uncommon | Slow motion lasts 5s and shows up more often |
-  | Echo Shield | Uncommon | Every 10 near misses restores a shield layer |
+  | Echo Shield | Uncommon | Every 10 near misses restores a shield layer (if your shields are already full, it says so and starts counting again) |
   | Guardian Moon | Rare | A moon circles your ship and smashes debris (5s recharge) |
   | Nova Pulse | Rare | Every 30s a shockwave clears the space around the planet |
   | Last Stand | Rare | Once per run, survive a fatal hit with no shields -- the screen clears and time slows |
