@@ -404,10 +404,15 @@
   let actx = null, muted = false;
   function ac() {
     if (!actx) {
+      // iPhone: count as media playback, not a ringer sound, so the silent
+      // switch doesn't mute the game (iOS 17+; ignored elsewhere)
+      try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
       try { actx = new (window.AudioContext || window.webkitAudioContext)(); }
       catch (e) { return null; }
     }
-    if (actx.state === 'suspended') actx.resume();
+    // 'suspended' before the first allowed tap, or 'interrupted' on iPhone
+    // after a call or switching apps -- either way, try to get going again
+    if (actx.state !== 'running' && actx.state !== 'closed') actx.resume().catch(() => {});
     return actx;
   }
   function tone(f1, f2, dur, type, vol) {
@@ -2552,6 +2557,25 @@
   const firstSound = () => { if (state === 'menu' || state === 'over') { ac(); menuStart(); } };
   window.addEventListener('pointerdown', firstSound, true);
   window.addEventListener('keydown', firstSound, true);
+  // Phones (iPhone Safari above all) only let sound start when a finger
+  // LIFTS -- touchend / pointerup / click -- not on touch-down, which is
+  // when the game reacts. So every lift also (re)unlocks audio: resume the
+  // context and play one silent sample, the long-standing iOS unlock. The
+  // menu song or run song already scheduled then starts playing.
+  let audioUnlocked = false;
+  function unlockAudio() {
+    const a = ac();
+    if (!a) return;
+    if (!audioUnlocked) {
+      try {
+        const b = a.createBuffer(1, 1, a.sampleRate), src = a.createBufferSource();
+        src.buffer = b; src.connect(a.destination); src.start(0);
+        audioUnlocked = true;
+      } catch (e) {}
+    }
+    if (state === 'menu' || state === 'over') menuStart();
+  }
+  for (const ev of ['pointerup', 'touchend', 'click']) window.addEventListener(ev, unlockAudio, { capture: true, passive: true });
 
   function frame(now) {
     const dt = Math.min(0.033, (now - last) / 1000);
