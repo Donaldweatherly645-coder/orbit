@@ -108,7 +108,8 @@
      reachable; its readouts only matter during a run */
   #hud{z-index:4}
   #stage:not(.playing) #hud .read{visibility:hidden}
-  #pausePanel{max-width:260px; padding:26px 24px 18px}
+  #pausePanel{max-width:280px; padding:26px 24px 22px}
+  #pausePanel .menuBtn{display:block; margin:12px auto 0}
   #pausePanel .prompt{margin-top:6px; border:1px solid rgba(255,154,60,.55)}
   .menuBtn{
     font-family:var(--mono); font-size:10px; letter-spacing:.22em;
@@ -127,7 +128,7 @@
   }
   .panel{
     position:relative; width:min(430px,100%); padding:38px 40px 34px;
-    background:rgba(10,14,26,.82); backdrop-filter:blur(3px);
+    backdrop-filter:blur(3px);
     text-align:center; pointer-events:auto;
     /* each screen scrolls itself. The overlay around it ignores touches (so
        taps reach the game), and iPhone won't scroll an area you can't
@@ -145,13 +146,16 @@
   }
   .closeX:hover{border-color:var(--slate)}
   .closeX:focus-visible{outline:2px solid var(--sodium); outline-offset:2px}
-  /* technical bracket corners, not a card */
-  .panel::before,.panel::after{
-    content:""; position:absolute; width:26px; height:26px; pointer-events:none;
-    border:1px solid var(--slate);
+  /* technical bracket corners, not a card. Drawn as the panel's own
+     background (not positioned pseudo-elements), so they always sit on the
+     panel's visible corners -- even while its contents scroll */
+  .panel{
+    --brk:linear-gradient(var(--slate),var(--slate));
+    background:
+      var(--brk) left top / 26px 1px no-repeat, var(--brk) left top / 1px 26px no-repeat,
+      var(--brk) right bottom / 26px 1px no-repeat, var(--brk) right bottom / 1px 26px no-repeat,
+      rgba(10,14,26,.82);
   }
-  .panel::before{top:0; left:0; border-right:0; border-bottom:0}
-  .panel::after{bottom:0; right:0; border-left:0; border-top:0}
   .eyebrow{
     font-family:var(--mono); font-size:10px; letter-spacing:.34em;
     color:var(--slate); margin:0 0 16px;
@@ -274,6 +278,13 @@
   /* dev mode: a toggle under the difficulty picker that reveals god mode
      and a level (planet) picker */
   #devBox{margin-top:16px}
+  /* title: best + achievements on one row, offline + dev mode on the next,
+     so the whole menu fits a phone screen without scrolling */
+  .moreRow{display:flex; flex-wrap:wrap; justify-content:center; align-items:center; gap:10px 14px; margin-top:12px}
+  .moreRow .bestLine,.moreRow .achBtn,.moreRow .installBtn,.moreRow #devBox{margin:0}
+  .moreRow #devBox:has(#devTools:not(.hidden)){flex-basis:100%}
+  /* the click/space/tap hint is for keyboards and mice, not touch screens */
+  @media (pointer:coarse){ #title .keys{display:none} }
   .devToggle{
     font-family:var(--mono); font-size:10px; letter-spacing:.22em;
     color:var(--slate); background:transparent; border:1px dashed var(--line);
@@ -385,28 +396,32 @@
       </div>
       <button class="prompt blink playBtn" type="button">PRESS TO LAUNCH</button>
       <div class="more">
-        <p class="bestLine">BEST <span id="titleBest">0</span></p>
-        <button class="achBtn" type="button" data-ach-open>ACHIEVEMENTS <span data-ach-count>0/0</span></button>
-        <button class="installBtn hidden" type="button" id="installBtn">&#8681; PLAY OFFLINE</button>
-        <div class="keys">
-          <span class="key">CLICK</span><span class="key">SPACE</span><span class="key">TAP</span>
+        <div class="moreRow">
+          <p class="bestLine">BEST <span id="titleBest">0</span></p>
+          <button class="achBtn" type="button" data-ach-open>ACHIEVEMENTS <span data-ach-count>0/0</span></button>
         </div>
-        <div id="devBox">
-          <button class="devToggle" type="button" id="devToggle" aria-pressed="false">DEV MODE: OFF</button>
-          <div id="devTools" class="hidden">
-            <div class="devRow">
-              <button class="devOpt" type="button" id="devGod" aria-pressed="false">GOD MODE: OFF</button>
-              <button class="devOpt" type="button" id="devLvl" aria-pressed="false">LEVEL SELECT: OFF</button>
-            </div>
-            <div class="lvlPick off" id="lvlPick">
-              <button class="devOpt" type="button" id="lvlDown" aria-label="Previous planet">&#9664;</button>
-              <div class="lvlRead">
-                <span class="k">START PLANET <span id="lvlNum">1</span>/20</span>
-                <span class="v"><i class="swatch" id="lvlSwatch"></i><span id="lvlName">DORMANT</span></span>
+        <div class="moreRow" id="titleRow2">
+          <button class="installBtn hidden" type="button" id="installBtn">&#8681; PLAY OFFLINE</button>
+          <div id="devBox">
+            <button class="devToggle" type="button" id="devToggle" aria-pressed="false">DEV MODE: OFF</button>
+            <div id="devTools" class="hidden">
+              <div class="devRow">
+                <button class="devOpt" type="button" id="devGod" aria-pressed="false">GOD MODE: OFF</button>
+                <button class="devOpt" type="button" id="devLvl" aria-pressed="false">LEVEL SELECT: OFF</button>
               </div>
-              <button class="devOpt" type="button" id="lvlUp" aria-label="Next planet">&#9654;</button>
+              <div class="lvlPick off" id="lvlPick">
+                <button class="devOpt" type="button" id="lvlDown" aria-label="Previous planet">&#9664;</button>
+                <div class="lvlRead">
+                  <span class="k">START PLANET <span id="lvlNum">1</span>/20</span>
+                  <span class="v"><i class="swatch" id="lvlSwatch"></i><span id="lvlName">DORMANT</span></span>
+                </div>
+                <button class="devOpt" type="button" id="lvlUp" aria-label="Next planet">&#9654;</button>
+              </div>
             </div>
           </div>
+        </div>
+        <div class="keys">
+          <span class="key">CLICK</span><span class="key">SPACE</span><span class="key">TAP</span>
         </div>
       </div>
     </div>
@@ -438,6 +453,7 @@
     <div class="panel hidden" id="pausePanel" role="dialog" aria-label="Paused">
       <p class="eyebrow">PAUSED</p>
       <button class="prompt" type="button" id="resumeBtn">&#9654; RESUME</button>
+      <button class="menuBtn" type="button" id="pauseMenuBtn">BACK TO MAIN MENU</button>
     </div>
 
     <div class="panel hidden" id="over">
@@ -927,6 +943,13 @@
   }
   function musicStart() {
     const a = ac(); if (!a) return;
+    // relaunching from the results screen: the run's song is still playing,
+    // so the new run simply carries on with it -- same track, same place.
+    // (Only a different difficulty, which has a different song, swaps it.)
+    if (music.timer && music.song === songFor()) {
+      if (music.slow) musicSlow(false, true);
+      return;
+    }
     musicStop(RESTART_FADE);
     const g = a.createGain();
     g.gain.value = muted ? 0 : MUSIC_VOL;
@@ -935,7 +958,7 @@
     music.stage = 0; music.slow = false; music.src = null;
     music.timer = 1; music.run++;
     const song = songFor();
-    music.shift = song.shift; music.major = !!song.major;
+    music.song = song; music.shift = song.shift; music.major = !!song.major;
     playSong(a, music.run, song);
   }
   // quick: true (a near-cut), false (the long 1.4s fade), or a fade in seconds
@@ -1400,17 +1423,26 @@
   el.pause.addEventListener('click', () => setPaused(true));
   document.getElementById('resumeBtn').addEventListener('click', () => setPaused(false));
   // game over -> title: the run's song fades out, then the menu song fades in
+  // (from a paused run too: the run simply ends -- no results, no best
+  // score -- and play never resumes on the way out)
   function backToMenu() {
-    if (state !== 'over') return;
+    if (state !== 'over' && !(state === 'play' && paused)) return;
     state = 'menu';
+    if (paused) {
+      paused = false;
+      el.pausePanel.classList.add('hidden');
+      // the audio clock has to run again for the songs to fade
+      if (actx && !document.hidden) actx.resume().catch(() => {});
+    }
     reset(true);
     el.over.classList.add('hidden');
     el.title.classList.remove('hidden');
-    document.querySelector('#title .more').appendChild(devEl.devBox);
+    document.getElementById('titleRow2').appendChild(devEl.devBox);
     el.overlay.scrollTop = 0;
     if (actx) { musicStop(false); menuStart(); }
   }
   document.getElementById('menuBtn').addEventListener('click', backToMenu);
+  document.getElementById('pauseMenuBtn').addEventListener('click', backToMenu);
 
   function die() {
     state = 'over';
@@ -1636,7 +1668,11 @@
   window.addEventListener('keydown', (e) => {
     if (state !== 'play') return;
     if (e.code === 'Escape' || e.code === 'KeyP') { e.preventDefault(); setPaused(!paused); }
-    else if (paused && (e.code === 'Space' || e.code === 'Enter')) { e.preventDefault(); setPaused(false); }
+    else if (paused && (e.code === 'Space' || e.code === 'Enter')) {
+      // a focused pause-screen button (RESUME or BACK TO MAIN MENU) handles its own key
+      if (document.activeElement && document.activeElement.closest && document.activeElement.closest('#pausePanel button')) return;
+      e.preventDefault(); setPaused(false);
+    }
   }, true);
 
   /* ---------- spawning ---------- */
@@ -3302,7 +3338,7 @@
       mortal() { const h = window.__orbit; if (h._grant) grantItem = h._grant; if (h._take) takeHit = h._take; },
       // audio
       menuStart, menuStop, musicStart, musicStop, musicSlow, mute: () => { soundAtPress = null; el.mute.click(); },
-      pause: (on) => setPaused(on), paused: () => paused, rewardOn: () => !!reward, calloutOn: () => !!(callout && !reward), backToMenu, soundLabel: () => el.mute.textContent,
+      pause: (on) => setPaused(on), paused: () => paused, musicRun: () => music.run, musicPos: () => (music.src && actx ? actx.currentTime - music.startAt : null), rewardOn: () => !!reward, calloutOn: () => !!(callout && !reward), backToMenu, soundLabel: () => el.mute.textContent,
       hide() { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
         document.dispatchEvent(new Event('visibilitychange')); },
       show() { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
