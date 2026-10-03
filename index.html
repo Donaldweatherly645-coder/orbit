@@ -601,8 +601,11 @@
     if (actx.state !== 'running' && actx.state !== 'closed' && !paused) actx.resume().catch(() => {});
     return actx;
   }
+  // (counted for the regression page: sounds made on a stopped clock)
+  const audioStats = { tones: 0, tonesSuspended: 0, songs: 0, menus: 0 };
   function tone(f1, f2, dur, type, vol) {
     const a = ac(); if (!a || muted) return;
+    if (a.state === 'running') audioStats.tones++; else audioStats.tonesSuspended++;
     const o = a.createOscillator(), g = a.createGain();
     o.type = type;
     o.frequency.setValueAtTime(f1, a.currentTime);
@@ -837,6 +840,7 @@
       src.buffer = buf; src.loop = true;
       src.loopStart = 0; src.loopEnd = Math.min(MENU_SONG.loopEnd, buf.duration);
       src.connect(g); src.start(at);
+      audioStats.menus++; src.onended = () => { audioStats.menus--; };
       menu.gain = g; menu.src = src; menu.startedAt = at;
     });
   }
@@ -938,15 +942,16 @@
       // (and on a restart, not before the last run's song has faded)
       music.startAt = Math.max(a.currentTime, menu.silentAt + HANDOFF_GAP, music.silentAt);
       src.start(music.startAt);
+      audioStats.songs++; src.onended = () => { audioStats.songs--; };
       music.src = src;
     });
   }
   function musicStart() {
     const a = ac(); if (!a) return;
     // relaunching from the results screen: the run's song is still playing,
-    // so the new run simply carries on with it -- same track, same place.
-    // (Only a different difficulty, which has a different song, swaps it.)
-    if (music.timer && music.song === songFor()) {
+    // so the new run simply carries on with it -- same track, same place,
+    // even if you picked another difficulty. It changes at the menu.
+    if (music.timer) {
       if (music.slow) musicSlow(false, true);
       return;
     }
@@ -980,10 +985,13 @@
     }, 2000);
   }
   // Silence everything while the app is in the background.
+  // Leaving the app mid-run pauses it, so you come back to the pause
+  // screen rather than a run that's been crashing on its own.
   document.addEventListener('visibilitychange', () => {
+    if (document.hidden && state === 'play') setPaused(true);
     if (!actx) return;
-    if (document.hidden) actx.suspend();
-    else if (!paused && (state === 'play' || state === 'finale' || menu.on || music.timer)) actx.resume();
+    if (document.hidden) actx.suspend().catch(() => {});
+    else if (!paused && (state === 'play' || state === 'finale' || menu.on || music.timer)) actx.resume().catch(() => {});
   });
 
   el.mute.addEventListener('click', () => {
@@ -1251,9 +1259,20 @@
   let callout = null;
   const calloutQ = [];
   const CALLOUT_TIME = 1.7;
-  function announce(name, desc, color) {
-    calloutQ.push({ t: 0, name, desc, color, queued: 0 });
-    if (calloutQ.length > 2) calloutQ.shift();   // keep it brief: never a backlog
+  // key: a newer message with the same key replaces a queued older one
+  // (shield counts coalesce to the latest total). Keyed messages are never
+  // dropped for age or to make room -- a shield confirmation always shows.
+  function announce(name, desc, color, key) {
+    if (key) {
+      for (let i = calloutQ.length - 1; i >= 0; i--) if (calloutQ[i].key === key) calloutQ.splice(i, 1);
+      // the same message already on screen: update it in place
+      if (callout && callout.key === key) { Object.assign(callout, { name, desc, color }); return; }
+    }
+    calloutQ.push({ t: 0, name, desc, color, queued: 0, key });
+    while (calloutQ.length > 2) {   // keep it brief: never a backlog
+      const i = calloutQ.findIndex((q) => !q.key);
+      calloutQ.splice(i < 0 ? 0 : i, 1);
+    }
   }
   let moon = null, echoCount = 0, echoBank = 0, novaT = 0, lastStandUsed = false;
   const has = (id) => !!owned[id];
@@ -1292,6 +1311,7 @@
     else if (!echoBank) { echoCount = 0; echoBank = 1; float(px(), py() - 40 * u, 'ECHO BANKED', UI.shield); sfx.near(); }
   }
   function shieldGainFx(text) {
+    syncHud();
     float(px(), py() - 40 * u, text, UI.shield);
     burst(px(), py(), REDUCE ? 8 : 22, UI.shield, 140 * u);
     sfx.shieldGet();
@@ -1398,7 +1418,7 @@
     devEl.devTag.lastElementChild.textContent =
       [devGod() && 'GOD', lv > 1 && 'P' + lv].filter(Boolean).join(' ');
     state = 'play';
-    paused = false; el.pausePanel.classList.add('hidden');
+    paused = false; resumeTok++; el.pausePanel.classList.add('hidden');
     el.title.classList.add('hidden');
     el.over.classList.add('hidden');
     document.querySelectorAll('.popup').forEach((p) => p.classList.add('hidden'));
@@ -1412,13 +1432,31 @@
   // Pause: the game stops dead (update isn't run, so every timer, hazard and
   // countdown holds) and all sound stops with it. Resuming brings the sound
   // back exactly as it was -- the mute setting is never touched.
+  // Resume waits (briefly) for the audio context to actually be running
+  // again, so the first chime after resuming isn't scheduled on a frozen
+  // clock. resumeTok cancels a resume still waiting if anything else
+  // happens first (paused again, back to menu, a new run).
+  let resumeTok = 0;
   function setPaused(on) {
-    if (on === paused || (on && state !== 'play')) return;
-    paused = on;
-    el.pausePanel.classList.toggle('hidden', !on);
-    if (actx) { if (on) actx.suspend(); else if (!document.hidden) actx.resume().catch(() => {}); }
-    if (on) document.getElementById('resumeBtn').focus({ preventScroll: true });
-    else if (document.activeElement) document.activeElement.blur();
+    if (on) {
+      resumeTok++;
+      if (paused || state !== 'play') return;
+      paused = true;
+      el.pausePanel.classList.remove('hidden');
+      if (actx) actx.suspend().catch(() => {});
+      document.getElementById('resumeBtn').focus({ preventScroll: true });
+      return;
+    }
+    if (!paused) return;
+    const tok = ++resumeTok;
+    const go = () => {
+      if (tok !== resumeTok || !paused || state !== 'play') return;
+      paused = false;
+      el.pausePanel.classList.add('hidden');
+      if (document.activeElement) document.activeElement.blur();
+    };
+    if (!actx || actx.state === 'running' || document.hidden) { go(); return; }
+    Promise.race([actx.resume().catch(() => {}), new Promise((r) => setTimeout(r, 400))]).then(go);
   }
   el.pause.addEventListener('click', () => setPaused(true));
   document.getElementById('resumeBtn').addEventListener('click', () => setPaused(false));
@@ -1427,6 +1465,7 @@
   // score -- and play never resumes on the way out)
   function backToMenu() {
     if (state !== 'over' && !(state === 'play' && paused)) return;
+    resumeTok++;
     state = 'menu';
     if (paused) {
       paused = false;
@@ -2231,6 +2270,11 @@
         shieldPickup = { a: Math.random() * Math.PI * 2, life: 8 };
         nextShield = SHIELD_DIFF[difficulty] * (0.7 + Math.random() * 0.6);
       }
+      if (shieldPickup && shields >= shieldMax()) {
+        const sx = cx + Math.cos(shieldPickup.a) * R_ORBIT, sy = cy + Math.sin(shieldPickup.a) * R_ORBIT;
+        burst(sx, sy, REDUCE ? 4 : 10, '#6FE3FF', 80 * u);
+        shieldPickup = null;
+      }
       if (shieldPickup) {
         shieldPickup.life -= dt;
         const sx = cx + Math.cos(shieldPickup.a) * R_ORBIT, sy = cy + Math.sin(shieldPickup.a) * R_ORBIT;
@@ -2238,7 +2282,8 @@
           // a Hull Patch or Echo Shield can top you up while this pickup is out
           shields = Math.min(shieldMax(), shields + 1); shieldsGot++;
           announce('SHIELDS ' + shields + '/' + shieldMax(),
-            shields > 1 ? 'BLOCKS THE NEXT ' + shields + ' HITS' : 'BLOCKS THE NEXT HIT', UI.shield);
+            shields > 1 ? 'BLOCKS THE NEXT ' + shields + ' HITS' : 'BLOCKS THE NEXT HIT', UI.shield, 'shield');
+          syncHud();
           burst(sx, sy, 14, '#6FE3FF', 140 * u);
           sfx.shieldGet();
           shieldPickup = null;
@@ -2377,7 +2422,7 @@
     if (reward) { reward.t += rdt; if (reward.t > 3.6) reward = null; }
     if (callout) { callout.t += rdt; if (callout.t > CALLOUT_TIME) callout = null; }
     for (const q of calloutQ) q.queued += rdt;
-    while (calloutQ.length && calloutQ[0].queued > 3) calloutQ.shift();   // stale: drop it
+    for (let i = calloutQ.length - 1; i >= 0; i--) if (!calloutQ[i].key && calloutQ[i].queued > 3) calloutQ.splice(i, 1);   // stale: drop it
     if (!callout && !reward && calloutQ.length && !(has('nova') && novaT < 3 && state === 'play')) callout = calloutQ.shift();
 
     if (playing && has('echo') && shields < shieldMax()) {
@@ -2429,10 +2474,13 @@
     el.comboV.textContent = 'x' + combo;
     el.combo.classList.toggle('on', playing && combo > 1);
     // always shown in play, so you can see how many you hold against the cap
-    el.shieldBadge.classList.toggle('on', playing);
+    syncHud();
+  }
+  function syncHud() {
+    el.shieldBadge.classList.toggle('on', state === 'play' || state === 'finale');
     el.shieldBadge.classList.toggle('empty', shields === 0 && shieldHitT <= 0);
     el.shieldBadge.classList.toggle('hit', shieldHitT > 0);
-    el.shieldV.textContent = '●'.repeat(shields) + '○'.repeat(Math.max(0, shieldMax() - shields));
+    el.shieldV.textContent = '\u25CF'.repeat(shields) + '\u25CB'.repeat(Math.max(0, shieldMax() - shields));
   }
 
   /* ---------- draw ---------- */
@@ -2918,7 +2966,9 @@
     // shockwave, and blinks for the last few seconds as a heads-up
     // (a callout box sits over the planet; the ring steps aside while it's
     // up -- and callouts hold off during the ring's final 3s countdown)
-    if (has('nova') && state === 'play' && !(callout && !reward)) {
+    // (and during the mothership fight, the cannon countdown is the one
+    // planet timer on show -- the pulse itself still fires)
+    if (has('nova') && state === 'play' && !boss && !(callout && !reward)) {
       const f = 1 - Math.max(0, Math.min(1, novaT / NOVA_EVERY));
       const soon = novaT < 3;
       ctx.save();
@@ -3338,7 +3388,13 @@
       mortal() { const h = window.__orbit; if (h._grant) grantItem = h._grant; if (h._take) takeHit = h._take; },
       // audio
       menuStart, menuStop, musicStart, musicStop, musicSlow, mute: () => { soundAtPress = null; el.mute.click(); },
-      pause: (on) => setPaused(on), paused: () => paused, musicRun: () => music.run, musicPos: () => (music.src && actx ? actx.currentTime - music.startAt : null), rewardOn: () => !!reward, calloutOn: () => !!(callout && !reward), backToMenu, soundLabel: () => el.mute.textContent,
+      pause: (on) => setPaused(on), paused: () => paused, musicRun: () => music.run, audioStats: () => Object.assign({}, audioStats, { ctx: actx ? actx.state : 'none' }),
+      sparkOnShip: () => { sparks.push({ a: player.a, life: 7, t: 0 }); },
+      calloutText: () => (callout ? callout.name : null), calloutQueue: () => calloutQ.map((q) => q.name),
+      hudShields: () => el.shieldV.textContent, shieldPickupOut: () => !!shieldPickup, shieldsGot: () => shieldsGot,
+      panels: () => ['title', 'over', 'pausePanel', 'achPanel'].filter((id) => !document.getElementById(id).classList.contains('hidden')),
+      novaRingShown: () => has('nova') && state === 'play' && !boss && !(callout && !reward),
+      musicPos: () => (music.src && actx ? actx.currentTime - music.startAt : null), rewardOn: () => !!reward, calloutOn: () => !!(callout && !reward), backToMenu, soundLabel: () => el.mute.textContent,
       hide() { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
         document.dispatchEvent(new Event('visibilitychange')); },
       show() { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
