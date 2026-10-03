@@ -175,6 +175,34 @@
       return [godState === 'play' && offState === 'over', `god on: ${godState}; dev off (god toggle left on): ${offState}`];
     });
 
+    section('4b. Shield pickups: counts, rings, confirmations');
+    for (const d of ['easy', 'normal', 'hard', 'extreme']) {
+      await check(`${d}: every pickup updates HUD + confirmation to the cap, never past it`, () => {
+        fresh(d); const cap = S().shieldMax, log = [];
+        for (let k = 1; k <= cap; k++) {
+          G().shieldPickupOnShip(); G().step(1);
+          const hud = G().hudShields(), filled = (hud.match(/●/g) || []).length;
+          log.push(`${S().shields}/${cap} hud ${filled} msg ${G().calloutText() || G().calloutQueue().slice(-1)[0]}`);
+          if (S().shields !== k || filled !== k) return [false, log.join('; ')];
+          G().step(130);   // let the message play out
+        }
+        const got = G().shieldsGot(); G().shieldPickupOnShip(); G().step(2);
+        const full = !G().shieldPickupOut() && G().shieldsGot() === got && S().shields === cap;
+        return [full, log.join('; ') + `; pickup at full cap: removed ${!G().shieldPickupOut()}, counted ${G().shieldsGot() - got}`]; });
+    }
+    await check('a shield confirmation is not lost behind a new-planet banner (latest count shown)', () => {
+      fresh('hard'); G().set({ elapsed: G().stageAt(1) + 0.01 }); G().step(2);   // banner up
+      G().shieldPickupOnShip(); G().step(2); G().shieldPickupOnShip(); G().step(2);
+      for (let i = 0; i < 60 * 4 && !G().calloutText(); i++) G().step(1);
+      const shown = G().calloutText();
+      return [shown === `SHIELDS ${S().shields}/${S().shieldMax}`, `after the banner: "${shown}", shields ${S().shields}`]; });
+    await check('Nova ring is hidden during the mothership fight (the pulse still fires)', () => {
+      G().dev({ on: true, god: true, lvl: true, level: 20 }); G().setDifficulty('normal'); G().start(); G().grant('nova');
+      for (let i = 0; i < 60 * 8 && S().boss !== 'fight'; i++) G().step(1);
+      const shownInFight = G().novaRingShown(); G().set({ novaT: 0.05 }); G().step(6); const fired = G().novaT() > 25;
+      G().dev({ on: false, god: false, lvl: false, level: 1 });
+      return [S().boss === 'fight' && !shownInFight && fired, `phase ${S().boss}, ring shown ${shownInFight}, pulse fired ${fired}`]; });
+
     section('5. Audio');
     if (S().audio !== 'running') {
       report('audio checks', null, `audio context is "${S().audio}" -- the browser didn't allow sound from this tap. Tap Run again.`);
@@ -193,9 +221,11 @@
       G().quiet(); G().slowPickupOnShip(); G().step(3); const slowOn = S().musicSlow;
       G().step(60 * 6); G().quiet(); const slowOff = S().musicSlow;
       await check('slow motion (real hourglass pickup) slows the song and releases it', () => [slowOn && !slowOff, `during slow-mo: ${slowOn}, after it ends: ${slowOff}`]);
-      G().hide(); await sleep(400); const hidden = S().audio;
-      G().show(); await sleep(600); const back = S().audio;
-      await check('tab/app interruption: suspends, then recovers', () => [hidden === 'suspended' && back === 'running', `hidden: ${hidden}, back: ${back}`]);
+      G().hide(); await sleep(400); const hidden = S().audio, autoPaused = G().paused();
+      G().show(); await sleep(400); const stillPaused = G().paused();
+      G().pause(false); await sleep(600); const back = S().audio;
+      await check('tab/app interruption mid-run: pauses and goes silent, then recovers on resume', () => [hidden === 'suspended' && autoPaused && stillPaused && back === 'running' && !G().paused(),
+        `hidden: audio ${hidden}, paused ${autoPaused}; back: still paused ${stillPaused}; after resume: audio ${back}`]);
       const lbl = () => fdoc().getElementById('mute').textContent, aria = () => fdoc().getElementById('mute').getAttribute('aria-pressed');
       await check('the sound button names its action and matches the real state', async () => {
         const onL = lbl(), onA = aria(); G().mute(); await sleep(300); const offL = lbl(), offA = aria(), offVol = S().musicVol;
@@ -229,6 +259,76 @@
         const s = S(); return [s.state === 'menu' && !G().paused() && !s.musicOn && s.menuOn && s.menuStartedAt >= s.musicSilentAt
           && fdoc().getElementById('pausePanel').classList.contains('hidden'),
           `state ${s.state}, paused ${G().paused()}; game song silent at ${s.musicSilentAt.toFixed(3)}s, menu starts ${s.menuStartedAt.toFixed(3)}s`]; });
+
+      // ---- 5b. transitions under abuse -------------------------------------
+      section('5b. Pause, menu and relaunch under rapid input');
+      const fw2 = frame.contentWindow, errs = [];
+      fw2.addEventListener('error', (e) => errs.push(e.message));
+      fw2.addEventListener('unhandledrejection', (e) => errs.push(String(e.reason)));
+      const key = (code) => fw2.dispatchEvent(new fw2.KeyboardEvent('keydown', { code, bubbles: true }));
+      const btn = (id) => fdoc().getElementById(id).click();
+      // a state is consistent when the panels on show match it exactly
+      const consistent = () => {
+        const s = S(), p = G().panels(), pz = G().paused();
+        const want = s.state === 'menu' ? ['title'] : s.state === 'over' ? ['over'] : pz ? ['pausePanel'] : [];
+        return { ok: JSON.stringify(p) === JSON.stringify(want) && !(pz && s.state !== 'play'), why: `state ${s.state}, paused ${pz}, panels [${p}]` };
+      };
+      const oneTrack = () => { const a = G().audioStats(), s = S(); return (s.musicOn ? 1 : 0) + (s.menuOn ? 1 : 0) <= 1; };
+
+      fresh('normal'); await sleep(800);
+      await check('rapid pause/resume (40 mixed clicks and Esc/P keys) ends consistent, frozen while paused', async () => {
+        const seq = ['pause', 'resumeBtn', 'Escape', 'Escape', 'KeyP', 'resumeBtn', 'pause', 'pause', 'KeyP', 'Escape'];
+        for (let k = 0; k < 4; k++) for (const x of seq) { x.startsWith('Key') || x === 'Escape' ? key(x) : btn(x); await sleep(5); }
+        await sleep(500);
+        G().pause(true); await sleep(50); const e0 = S().elapsed; G().step(60); await sleep(400); const e1 = S().elapsed;
+        const c = consistent(); G().pause(false); await sleep(500); const c2 = consistent();
+        return [c.ok && c2.ok && e0 === e1 && G().paused() === false, `while paused: ${c.why}, clock ${e0.toFixed(2)} -> ${e1.toFixed(2)}; resumed: ${c2.why}`]; });
+      await check('pause then resume then pause again in one beat: stays paused (no stale resume)', async () => {
+        btn('pause'); btn('resumeBtn'); btn('pause'); await sleep(600);
+        const c = consistent(); return [G().paused() && c.ok, c.why]; });
+      await check('sound toggled while paused is kept on resume; nothing plays while paused', async () => {
+        const t0 = G().audioStats(); btn('mute'); await sleep(100); const mutedNow = S().muted;
+        G().sparkOnShip(); G().step(5);   // (step is frozen: the spark isn't collected)
+        const t1 = G().audioStats(); btn('resumeBtn'); await sleep(600);
+        const ok = mutedNow && S().muted && S().musicVol < 0.01 && t1.tones === t0.tones;
+        btn('mute'); await sleep(300);
+        return [ok && !S().muted && S().musicVol > 0.3, `muted while paused ${mutedNow}; after resume muted ${S().muted === false ? 'cleared by test' : S().muted}, sounds made while paused ${t1.tones - t0.tones}`]; });
+      await check('multiplier chime plays on a running clock right after resume', async () => {
+        G().quiet(); btn('pause'); await sleep(300); btn('resumeBtn'); await sleep(600);
+        const t0 = G().audioStats(); G().sparkOnShip(); G().step(3); const t1 = G().audioStats();
+        return [t1.ctx === 'running' && t1.tones > t0.tones && t1.tonesSuspended === t0.tonesSuspended,
+          `clock ${t1.ctx}, chimes on running clock +${t1.tones - t0.tones}, on stopped clock +${t1.tonesSuspended - t0.tonesSuspended}`]; });
+      await check('backgrounding while paused: stays paused and silent, still paused on return', async () => {
+        btn('pause'); await sleep(200); G().hide(); await sleep(300); const a = S().audio; G().show(); await sleep(400);
+        const c = consistent(); const b = S().audio; btn('resumeBtn'); await sleep(600);
+        return [a === 'suspended' && b === 'suspended' && c.ok && G().paused() === false && S().audio === 'running', `hidden ${a}, back ${b} (${c.why}); after resume ${S().audio}`]; });
+      await check('pause -> BACK TO MAIN MENU spammed with RESUME: the run never comes back', async () => {
+        btn('pause'); await sleep(100);
+        for (let k = 0; k < 6; k++) { btn('pauseMenuBtn'); btn('resumeBtn'); key('Escape'); key('Space'); }
+        await sleep(2500); const c = consistent(), s = S();
+        return [s.state === 'menu' && c.ok && !s.musicOn && s.menuOn && oneTrack(), `${c.why}, run song on ${s.musicOn}, menu song on ${s.menuOn}`]; });
+      await check('menu -> launch -> pause -> menu -> launch: one track, clean state', async () => {
+        G().setDifficulty('normal'); G().start(); G().quiet(); await sleep(1500); btn('pause'); btn('pauseMenuBtn'); await sleep(2500);
+        G().start(); G().quiet(); await sleep(1800); const c = consistent(), a = G().audioStats(), s = S();
+        return [s.state === 'play' && c.ok && s.musicOn && !s.menuOn && a.songs === 1 && a.menus === 0, `${c.why}; live run songs ${a.songs}, live menu songs ${a.menus}`]; });
+      await check('game over -> rapid relaunch x5 (with a difficulty change): same song, never restarted or doubled', async () => {
+        const run = G().musicRun(); let p = G().musicPos(), ok = true;
+        for (let k = 0; k < 5; k++) {
+          G().quiet(); G().rock(0.5, 1); stepUntilOver(200); await sleep(750);
+          if (k === 2) btn && fdoc().querySelector('#over [data-diff="extreme"]').click();
+          G().press(); G().press(); await sleep(150);
+          const q = G().musicPos(); ok = ok && S().state === 'play' && G().musicRun() === run && q > p; p = q;
+        }
+        const a = G().audioStats(), c = consistent();
+        return [ok && a.songs === 1 && a.menus === 0 && c.ok && S().difficulty === 'extreme', `same song all 5 times ${ok}; live songs ${a.songs}, menu ${a.menus}; ${c.why}; difficulty ${S().difficulty}`]; });
+      await check('game over -> BACK TO MAIN MENU double-tapped (with relaunch taps): one clean fade-over', async () => {
+        G().quiet(); G().rock(0.5, 1); stepUntilOver(200); await sleep(800);
+        btn('menuBtn'); btn('menuBtn'); btn('againPrompt'); await sleep(2800);
+        const s = S(), a = G().audioStats(), c = consistent();
+        return [s.state === 'menu' && c.ok && !s.musicOn && s.menuOn && a.songs === 0 && a.menus === 1 && s.menuStartedAt >= s.musicSilentAt,
+          `${c.why}; live songs ${a.songs}, menu ${a.menus}; game silent ${s.musicSilentAt.toFixed(2)}s, menu starts ${s.menuStartedAt.toFixed(2)}s`]; });
+      await check('no script errors during any of the above', () => [errs.length === 0, errs.length ? errs.join(' | ') : 'none']);
+
     }
 
     section('6. Install and offline (this page\'s server)');
