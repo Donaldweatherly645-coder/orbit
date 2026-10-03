@@ -213,10 +213,22 @@
       await sleep(2600);
       await check('after a crash the run song keeps playing under the results', () => {
         const s = S(); return [s.state === 'over' && s.musicOn && !s.menuOn, `state ${s.state}, run song on ${s.musicOn}, menu song on ${s.menuOn}`]; });
+      await check('relaunch carries on the same song from where it was (no restart, no copy)', async () => {
+        const run = G().musicRun(), p0 = G().musicPos(); G().start(); await sleep(500);
+        const s = S(), p1 = G().musicPos();
+        return [s.state === 'play' && G().musicRun() === run && p1 > p0 && s.musicOn && !s.menuOn,
+          `same song ${G().musicRun() === run}, position ${p0.toFixed(2)}s -> ${p1.toFixed(2)}s, menu song on ${s.menuOn}`]; });
+      G().quiet(); G().rock(0.5, 1); stepUntilOver(120); await sleep(300);
       G().backToMenu(); await sleep(2600);
       await check('BACK TO MAIN MENU: the run song fades out, then the menu song fades in', () => {
         const s = S(); return [s.state === 'menu' && !s.musicOn && s.menuOn && s.menuStartedAt >= s.musicSilentAt,
           `state ${s.state}; game song silent at ${s.musicSilentAt.toFixed(3)}s, menu starts ${s.menuStartedAt.toFixed(3)}s`]; });
+      G().setDifficulty('hard'); G().start(); G().quiet(); await sleep(1500); G().pause(true);
+      G().backToMenu(); await sleep(2600);
+      await check('pause -> BACK TO MAIN MENU ends the run and hands over to the menu song', () => {
+        const s = S(); return [s.state === 'menu' && !G().paused() && !s.musicOn && s.menuOn && s.menuStartedAt >= s.musicSilentAt
+          && fdoc().getElementById('pausePanel').classList.contains('hidden'),
+          `state ${s.state}, paused ${G().paused()}; game song silent at ${s.musicSilentAt.toFixed(3)}s, menu starts ${s.menuStartedAt.toFixed(3)}s`]; });
     }
 
     section('6. Install and offline (this page\'s server)');
